@@ -1,0 +1,20 @@
+# =============================================================================
+# Storyboard AI — Python Dependencies
+# =============================================================================
+
+# Core utilities (config, image processing, video I/O)
+python-dotenv
+opencv-python
+numpy
+Pillow
+requests
+
+# AI Gateway — multi-provider support
+openai>=1.0.0          # DeepSeek V4 Pro (OpenAI-compatible protocol)
+dashscope>=1.20.0      # Qwen-Image-2.0-Pro (Alibaba DashScope)
+pyyaml>=6.0            # gateway.yaml parsing
+sqlalchemy>=2.0.0      # Database ORM for request logging & cost tracking
+
+# Web UI
+flask>=3.0.0
+

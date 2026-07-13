@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+
+# Outputs (generated at runtime)
+genai-pipeline/output/
+genai-pipeline/ai_gateway/ai_gateway.db
+*.mp4
+*.pkl
+*.pt
+
+# SAM3 hosting (separate service, not needed for pipeline)
+sam3-hosting/
+
+# Docs
+docs/
+
+# Secrets
+*.env
+!genai-pipeline/.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db

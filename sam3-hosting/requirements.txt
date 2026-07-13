@@ -1,0 +1,22 @@
+# SAM 3 Core and Inference Server Requirements
+fastapi
+uvicorn
+python-multipart
+numpy>=1.26
+Pillow
+torch==2.7.0
+torchvision
+timm>=1.0.17
+tqdm
+ftfy==6.1.1
+regex
+iopath>=0.1.10
+typing_extensions
+huggingface_hub
+matplotlib
+einops
+opencv-python
+scikit-image
+scikit-learn
+pycocotools
+decord

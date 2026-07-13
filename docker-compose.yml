@@ -1,0 +1,29 @@
+services:
+  storyboard:
+    build: .
+    pull_policy: never
+    image: storyboard-ai:latest
+    container_name: storyboard-ai
+    stdin_open: true
+    tty: true
+    env_file:
+      - ./.env
+    environment:
+      # Logging configuration — override via .env or here
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      # Output directory — must match the volume mount below
+      - OUTPUT_DIR=/app/genai-pipeline/output
+    volumes:
+      # Persist generated videos outside the container
+      - ./genai-pipeline/output:/app/genai-pipeline/output
+      # Persist AI Gateway observability DB
+      - ./genai-pipeline/ai_gateway:/app/genai-pipeline/ai_gateway
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+        labels: "storyboard"

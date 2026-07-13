@@ -1,0 +1,104 @@
+# =============================================================================
+# AI Gateway — single source of truth for providers, routes, retry, pricing & db
+# =============================================================================
+# API keys are injected from environment variables (${ENV_VAR} placeholders).
+# NEVER commit real keys to this file.
+
+providers:
+  deepseek:
+    type: llm
+    model: deepseek-v4-pro
+    api_key_env: DEEPSEEK_API_KEY
+    endpoint: https://api.deepseek.com/v1
+    timeout: 120
+
+  qwen:
+    type: image
+    model: qwen-image-2.0-pro-2026-04-22
+    api_key_env: DASHSCOPE_API_KEY
+    # DashScope multimodal generation endpoint
+    endpoint: https://llm-jwgnh8j0gdstnsi2.cn-beijing.maas.aliyuncs.com/api/v1
+    timeout: 60
+
+  minimax:
+    type: tts
+    model: speech-2.8-hd
+    api_key_env: MINIMAX_API_KEY
+    endpoint: https://api.minimax.chat/v1/t2a_v2
+    timeout: 30
+
+  seedance:
+    type: video
+    model: doubao-seedance-2.0
+    api_key_env: ARK_API_KEY
+    endpoint: https://ark.cn-beijing.volces.com/api/v3
+    timeout: 600
+
+  happyhorse:
+    type: video
+    model: happyhorse-1.0-i2v
+    api_key_env: DASHSCOPE_API_KEY
+    # Base endpoint for DashScope async video API.
+    # Recommend switching to workspace-specific domain for better perf:
+    #   https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1
+    endpoint: https://dashscope.aliyuncs.com/api/v1
+    poll_interval: 15
+    timeout: 600
+
+  doubao_search:
+    type: search
+    model: doubao-search-custom
+    api_key_env: DOUBAO_SEARCH_API_KEY
+    endpoint: https://open.feedcoopapi.com/search_api/web_search
+    timeout: 15
+
+# ---- Task → Provider routing ------------------------------------------------
+routes:
+  story:   { provider: deepseek }
+  search:  { provider: doubao_search }
+  image:   { provider: qwen }
+  voice:   { provider: minimax }
+  video:   { provider: seedance }
+  video_happyhorse: { provider: happyhorse }
+
+# ---- Retry policy -----------------------------------------------------------
+retry:
+  max_retries: 3
+  backoff: exponential          # exponential | fixed | linear
+  initial_delay_seconds: 5
+  max_delay_seconds: 60
+  retryable_statuses: [429, 500, 502, 503, 504]
+
+# ---- Logging -----------------------------------------------------------------
+logging:
+  level: INFO                   # DEBUG | INFO | WARNING | ERROR
+  log_request_body: false       # set to true to log full prompt text (privacy risk)
+  log_response_summary: true    # log response type/size without full content
+  response_truncate_chars: 200  # max chars for response summary
+
+# ---- Database ----------------------------------------------------------------
+database:
+  type: sqlite                  # sqlite for dev; switch to postgresql for prod
+  path: ai_gateway.db
+
+# ---- Pricing (CNY) — update to match official pricing -----------------------
+pricing:
+  deepseek-v4-pro:
+    currency: CNY
+    input_per_1k_tokens: 0.001
+    output_per_1k_tokens: 0.002
+  qwen-image-2.0-pro:
+    currency: CNY
+    per_image_1024: 0.04
+    per_image_2048: 0.10
+  speech-2.8-hd:
+    currency: CNY
+    per_1k_characters: 0.015
+  doubao-seedance-2.0:
+    currency: CNY
+    per_second_1080p: 0.15
+    per_second_720p: 0.10
+  happyhorse-1.0-i2v:
+    currency: CNY
+    per_second_1080p: 0.15
+    per_second_720p: 0.10

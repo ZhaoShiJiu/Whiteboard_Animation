@@ -1,229 +1,224 @@
-# Storyboard AI
+# Whiteboard Animation AI
 
 > [!NOTE]
-> **Latest Release**: The pipeline now runs on a multi-provider AI Gateway architecture (DeepSeek + Qwen + MiniMax + Seedance), completely decoupled from Google Gemini. SAM3 object segmentation remains optional — you can run the entire pipeline with just your API keys.
+> **最新发布**：管线现已迁移至多供应商 AI 网关架构（DeepSeek + Qwen + MiniMax + Seedance），完全解耦 Google Gemini。SAM3 物体分割仍为可选 —— 仅需 API Key 即可运行完整管线。
 
-An intelligent agentic pipeline that automates the creation of high-quality, fully narrated whiteboard animation videos from a simple text prompt.
+一个智能代理管线，从简单的文本提示自动生成高质量、带完整旁白的白板动画视频。
 
-## Overview
+## 概述
 
-Storyboard AI is a complete end-to-end framework. It takes in a high-level topic or context and handles everything: researching the topic, writing a compelling narrative script, planning the visual storyboard, generating custom whiteboard-style artwork, animating the drawing process, synthesizing voiceover narration, and burning perfectly timed subtitles.
+Whiteboard Animation AI 是一个完整的端到端框架。输入一个主题或上下文，它自动完成一切：研究主题、撰写引人入胜的叙事脚本、规划视觉分镜、生成自定义白板风格画作、为绘制过程制作动画、合成语音旁白，并烧录精确同步的字幕。
 
-It operates autonomously using an agentic approach, meaning the **Director Agent** breaks down the user request into manageable scenes, delegates tasks to specialized sub-agents/tools through a unified **AI Gateway**, and finally stitches everything back together.
-
-### Demo Video: *What is Adhik Maas and its relation with Shalivahan Shaka (HINDI) (strictly 4 scenes)*
-
-> [!IMPORTANT]
-> The entire demo video below was generated automatically from a **single input prompt/instruction**: the title itself.
-
-https://github.com/user-attachments/assets/433e86bc-7ad4-433b-8b09-117e1f3af9e9
-
-**Major Pipeline Steps Executed:**
-1. **Web Search**: Performed web-grounded research to gather facts about Adhik Maas and Shalivahan Shaka.
-2. **Grounded Image Generation**: Generated custom whiteboard illustrations utilizing internet-grounded reference images for scene visual accuracy.
-3. **Whiteboard Animation + Video Gen**: Segmented objects and calculated vector sketch contours using SAM 3 for custom drawing animation, alongside AI video generation (Doubao-Seedance-2.0) to stitch dynamic segments.
-4. **Multi-Provider AI Stack**: Powered by DeepSeek V4 Pro (LLM), Qwen-Image-2.0-Pro (image), MiniMax Speech-2.8-HD (TTS), and Doubao-Seedance-2.0 (video).
+它采用代理方式自主运行，即 **导演代理（Director Agent）** 将用户请求分解为可管理的场景，通过统一的 **AI 网关** 将任务委派给专门的子代理/工具，最后将所有内容缝合为最终视频。
 
 ---
 
-## Core Features
+## 演示视频
 
-- **Multi-Provider AI Gateway**: A unified gateway (`ai_gateway/`) that routes all AI calls through a configurable middleware chain (logging → cost tracking → retry) to the best provider for each task:
-  - **DeepSeek V4 Pro** — LLM reasoning (Director, Research, Image Prompt, Narration Refinement)
-  - **Qwen-Image-2.0-Pro** (Alibaba DashScope) — Whiteboard-style image generation
-  - **MiniMax Speech-2.8-HD** — High-quality TTS with native word/sentence-level subtitles
-  - **Doubao-Seedance-2.0** (Volcengine Ark) — Video generation from static frames
-  - **Doubao Search Custom** — Web search with configurable time range & authority filtering
-- **Centralized Configuration** (`gateway.yaml`): Single source of truth for providers, routes, retry policies, pricing, and database settings. Environment variables inject API keys — no hardcoded secrets.
-- **Usage & Cost Tracking**: Built-in SQLite database (`ai_gateway.db`) logs every AI request with token counts, image counts, character counts, duration, resolution, and cost — enabling full observability.
-- **Automatic Retry with Exponential Backoff**: Configurable per provider; handles rate limits (429), server errors (5xx), and transient network failures gracefully.
-- **Web Search & Research Options**: Supports both AI-powered Deep Research and fast Web Search (via Doubao Search) to write highly detailed and factual scripts.
-- **Reference Image Grounding**: Automatically searches the web for reference images of real-world entities (e.g., historical figures or landmarks) for each scene and feeds them to the image generator to maintain accurate structural accuracy.
-- **Multi-lingual Support**: Prompts the Director, generates script narration, and creates subtitles dynamically across multiple languages (e.g., Hindi, English, Spanish, Chinese).
-- **SAM 3 Integration** (Optional): Integrates the state-of-the-art **Segment Anything Model 3** to isolate object boundaries for multi-pass whiteboard drawing. Fully optional — runs in single-pass mode without it.
-- **Custom Animation Engine**: Translates segmented object contours into fluid, custom stroke-by-stroke hand-drawn whiteboard animations.
-- **Fast Mode**: Parallel scene generation using multi-threading for significantly faster pipeline execution.
+[![观看演示](https://i1.hdslb.com/bfs/archive/e4fe881edc67986ab204e0d7461508ad8accf56b.jpg)](https://www.bilibili.com/video/BV1azNU6BEzN/)
+
+> 点击上方图片观看白板手绘动画演示视频（Bilibili）
 
 ---
 
-## Key Advantages
+## 核心功能
 
-- **Grounded & Dynamic Videos**: Requires **only a single text instruction or prompt** to start. The Director Agent autonomously handles research, scriptwriting, scene composition, image/video generation, audio pacing, and compilation.
-- **Provider Flexibility**: The AI Gateway decouples the pipeline from any single AI vendor. Swap providers by editing `gateway.yaml` — no code changes needed.
-- **Huge Cost Savings**: Stretches and paces static line-art animations dynamically to match the audio narration length. For example, a 4-scene project requires only 32 seconds of total raw visual sequences (8 seconds × 4 scenes), but the animation engine stretches and times the sketch paths to create a complete, high-quality **2 min 30 sec video** without expensive video-generation API calls.
-- **Full Observability**: Every AI call is logged with latency, token usage, and cost — giving you complete visibility into pipeline spend.
+- **多供应商 AI 网关**：统一网关（`ai_gateway/`）通过可配置的中间件链（日志 → 成本追踪 → 重试）将所有 AI 调用路由到各任务的最佳供应商：
+  - **DeepSeek V4 Pro** — LLM 推理（导演、研究、图像提示词、旁白润色）
+  - **Qwen-Image-2.0-Pro**（阿里云 DashScope）— 白板风格图像生成
+  - **MiniMax Speech-2.8-HD** — 高质量 TTS，原生返回词/句级别的字幕时间戳
+  - **Doubao-Seedance-2.0**（火山引擎 Ark）— 静态帧生成动态视频
+  - **Doubao Search Custom** — 联网搜索，支持可配置的时间范围和权威过滤
+- **集中配置**（`gateway.yaml`）：供应商、路由、重试策略、定价和数据库设置的单一来源头。环境变量注入 API Key —— 无硬编码密钥。
+- **用量与成本追踪**：内建 SQLite 数据库（`ai_gateway.db`）记录每次 AI 请求的 token 数量、图片数量、字符数、时长、分辨率和费用 —— 实现完整的可观测性。
+- **自动重试与指数退避**：按供应商可配置；优雅处理频率限制（429）、服务器错误（5xx）和暂时性网络故障。
+- **联网搜索与研究选项**：支持 AI 驱动的深度研究和快速联网搜索（通过 Doubao Search），撰写高度详细且事实准确的脚本。
+- **参考图片锚定**：为每个场景自动搜索现实实体的参考图（如历史人物或地标），提供给图像生成器以保持准确的结构还原度。
+- **多语言支持**：以多种语言（如印地语、英语、西班牙语、中文）动态提示导演代理、生成脚本旁白和创建字幕。
+- **SAM 3 集成**（可选）：集成最先进的 **Segment Anything Model 3** 来隔离物体边界，实现多通道白板绘制。完全可选 —— 不配置时以单通道模式运行。
+- **自定义动画引擎**：将分割后的物体轮廓转化为流畅、逐笔手绘风格的白板动画。
+- **快速模式**：使用多线程并行生成场景，大幅加快管线执行速度。
 
 ---
 
-## Setup & Configuration
+## 关键优势
 
-### 1. Environment Configuration (`.env`)
+- **锚定且动态的视频**：仅需 **一个文本指令或提示** 即可启动。导演代理自主处理研究、脚本撰写、场景构图、图像/视频生成、音频节奏和合成。
+- **供应商灵活性**：AI 网关将管线与任何单一 AI 供应商解耦。编辑 `gateway.yaml` 即可更换供应商 —— 无需修改代码。
+- **大幅节省成本**：将静态线稿动画拉伸并与音频旁白长度动态匹配。例如，一个 4 场景的项目仅需 32 秒的原始视觉素材（8 秒 × 4 场景），但动画引擎拉伸并调度素描路径，创作出完整的、高质量的 **2 分 30 秒视频**，无需昂贵的视频生成 API 调用。
+- **完整可观测性**：每次 AI 调用都记录延迟、token 使用量和费用 —— 让您完全掌握管线支出。
 
-Create a `.env` file in the `genai-pipeline` folder (or copy `genai-pipeline/.env.example`) and configure the following API keys:
+---
+
+## 配置与安装
+
+### 1. 环境配置（`.env`）
+
+在 `genai-pipeline` 文件夹中创建 `.env` 文件（或复制 `genai-pipeline/.env.example`），配置以下 API Key：
 
 ```ini
-# DeepSeek — LLM reasoning (Director, Research, Image Prompt, Narration Refinement)
+# DeepSeek — LLM 推理（导演、研究、图像提示词、旁白润色）
 DEEPSEEK_API_KEY="your-deepseek-api-key-here"
 
-# Alibaba DashScope — Qwen-Image-2.0-Pro image generation
+# 阿里云 DashScope — Qwen-Image-2.0-Pro 图像生成
 DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 
-# MiniMax — Speech-2.8-HD TTS voice synthesis
+# MiniMax — Speech-2.8-HD TTS 语音合成
 MINIMAX_API_KEY="your-minimax-api-key-here"
 
-# Volcengine Ark — Doubao-Seedance-2.0 video generation
+# 火山引擎 Ark — Doubao-Seedance-2.0 视频生成
 ARK_API_KEY="your-ark-api-key-here"
 
-# Volcengine Doubao Search — Web search (500 free queries/month)
+# 火山引擎 Doubao Search — 联网搜索（每月 500 次免费额度）
 DOUBAO_SEARCH_API_KEY="your-doubao-search-api-key-here"
 
-# Optional — SAM3 self-hosting endpoint (leave empty to skip segmentation)
+# 可选 — SAM3 自托管端点（留空则跳过分割阶段）
 # SAM_API_URL="https://sam3-app-xxxxx.run.app/predict"
 ```
 
-### 2. AI Gateway Configuration (`gateway.yaml`)
+### 2. AI 网关配置（`gateway.yaml`）
 
-The AI Gateway is configured via `genai-pipeline/ai_gateway/gateway.yaml`. This file defines:
+AI 网关通过 `genai-pipeline/ai_gateway/gateway.yaml` 配置。该文件定义：
 
-| Section | Purpose |
-|---------|---------|
-| `providers` | Model name, endpoint, timeout, and API key env var for each provider |
-| `routes` | Maps logical tasks (`story`, `search`, `image`, `voice`, `video`) to providers |
-| `retry` | Max retries, backoff strategy (exponential/fixed/linear), delay bounds |
-| `database` | SQLite path for logging and cost tracking (switch to PostgreSQL for production) |
-| `pricing` | Per-provider pricing in CNY for cost calculation |
+| 配置段 | 用途 |
+|--------|------|
+| `providers` | 每个供应商的模型名称、端点、超时和 API Key 环境变量 |
+| `routes` | 将逻辑任务（`story`、`search`、`image`、`voice`、`video`）映射到供应商 |
+| `retry` | 最大重试次数、退避策略（指数/固定/线性）、延迟范围 |
+| `database` | 日志和成本追踪的 SQLite 路径（生产环境可切换至 PostgreSQL） |
+| `pricing` | 按供应商的 CNY 定价，用于费用计算 |
 
-You can modify this file to swap providers, adjust retry behavior, or update pricing — no code changes needed.
+您可以直接修改此文件来更换供应商、调整重试行为或更新定价 —— 无需修改代码。
 
-### 3. SAM 3 Model Hosting (FastAPI & GCP Cloud Run — Optional)
+### 3. SAM 3 模型托管（FastAPI & GCP Cloud Run — 可选）
 
-The whiteboard drawing sequence generator can utilize instance segmentation for advanced multi-pass drawing. We host a self-contained FastAPI server that wraps the **Segment Anything Model 3 (SAM 3)**.
+白板绘制序列生成器可利用实例分割实现高级多通道绘制。我们托管了一个自包含的 FastAPI 服务器，封装了 **Segment Anything Model 3（SAM 3）**。
 
-- **Optional Setup**: If no `SAM_API_URL` is configured, the pipeline skips the segmentation phase and runs the whiteboard animation in single-pass mode. This allows new users to start running the pipeline directly using just their API keys.
-- **Hosting Instructions**: For complete setup instructions on obtaining weights, configuring the Docker container, and deploying to Google Cloud Run with GPU accelerators (NVIDIA L4), please refer to the detailed [SAM 3 Hosting Guide](./sam3-hosting/README.md) in the `sam3-hosting/` folder.
+- **可选配置**：如果未设置 `SAM_API_URL`，管线跳过分割阶段，以单通道模式运行白板动画。新用户仅需 API Key 即可直接运行管线。
+- **托管说明**：关于获取权重、配置 Docker 容器以及使用 GPU 加速器（NVIDIA L4）部署到 Google Cloud Run 的完整说明，请参阅 `sam3-hosting/` 文件夹中的 [SAM 3 托管指南](./sam3-hosting/README.md)。
 
-### 4. Python Environment & Dependencies
+### 4. Python 环境与依赖
 
-Set up your Python environment (Conda or venv recommended) and install the dependencies:
+设置 Python 环境（推荐 Conda 或 venv）并安装依赖：
 
-- **Core GenAI Pipeline**: Install via the root [requirements.txt](./requirements.txt):
+- **核心 GenAI 管线**：通过根目录的 [requirements.txt](./requirements.txt) 安装：
   ```bash
   pip install -r requirements.txt
   ```
-- **SAM 3 Model Server**: Install via [sam3-hosting/requirements.txt](./sam3-hosting/requirements.txt) if self-hosting without Docker.
+- **SAM 3 模型服务器**：如果不使用 Docker 自托管，通过 [sam3-hosting/requirements.txt](./sam3-hosting/requirements.txt) 安装。
 
 ---
 
-## How to Run & View Outputs
+## 如何运行与查看输出
 
-### Step 1: Install Python Dependencies
+### 第一步：安装 Python 依赖
 
 ```bash
-# Core pipeline
+# 核心管线
 pip install -r requirements.txt
 
-# SAM 3 server (only if self-hosting)
+# SAM 3 服务器（仅在自托管时需要）
 pip install -r sam3-hosting/requirements.txt
 ```
 
-### Step 2: Run the Pipeline CLI
+### 第二步：运行管线 CLI
 
 ```bash
-# Navigate to the core agent directory
+# 进入核心代理目录
 cd genai-pipeline
 
-# Run the interactive pipeline script
+# 运行交互式管线脚本
 python pipeline.py
 ```
 
-### Step 3: Interactive CLI Setup
+### 第三步：交互式 CLI 配置
 
-The CLI will guide you through:
+CLI 会引导您完成：
 
-1. **Context/Prompt**: Enter the main topic for your video (e.g., "The History of Space Travel").
-2. **Research Mode**: Choose between `[1]` Deep Research, `[2]` Web Search (Fast), or `[3]` None.
-3. **Reference Images**: Enable or disable internet search for visual references (`Y/n`).
-4. **Fast Mode**: Enable parallel image/audio generation for all scenes to save time (`Y/n`).
-5. **Narration Language**: Enter the target language for the script (e.g., `hindi`, `english`, `chinese`).
-6. **Video Generation**: Enable or disable AI video generation via Seedance (`y/N`).
+1. **主题/提示词**：输入视频的主题（例如"The History of Space Travel"）。
+2. **研究模式**：选择 `[1]` 深度研究、`[2]` 联网搜索（快速）或 `[3]` 不研究。
+3. **参考图片**：启用或禁用联网搜索视觉参考（`Y/n`）。
+4. **快速模式**：启用所有场景的并行图像/音频生成以节省时间（`Y/n`）。
+5. **旁白语言**：输入脚本的目标语言（如 `hindi`、`english`、`chinese`）。
+6. **视频生成**：启用或禁用通过 Seedance 生成 AI 视频（`y/N`）。
 
-### Step 4: Locate Outputs
+### 第四步：找到输出
 
-All intermediate assets and final outputs are saved under `genai-pipeline/output/run_<timestamp>/`:
+所有中间产物和最终输出保存在 `genai-pipeline/output/run_<时间戳>/` 下：
 
-- **`storyboard_final_video.mp4`**: The completed, stitched whiteboard animation video with narration, background drawing paths, and burned subtitles.
-- **`scene_<N>/`**: Individual folders for each scene containing the raw generated images, voiceover audio (`.mp3`), SAM 3 segmentation masks, subtitles, and scene-level sketch videos.
-- **`ai_gateway.db`**: SQLite database with request logs and cost tracking (automatically created in `genai-pipeline/`).
+- **`whiteboard-animation-ai_final_video.mp4`**：完成的、拼接好的白板动画视频，包含旁白、背景绘制路径和烧录字幕。
+- **`scene_<N>/`**：每个场景的独立文件夹，包含生成的原始图片、旁白音频（`.mp3`）、SAM 3 分割掩码、字幕和场景级素描视频。
+- **`ai_gateway.db`**：包含请求日志和成本追踪的 SQLite 数据库（自动创建于 `genai-pipeline/` 中）。
 
 ---
 
-## Project Architecture
+## 项目架构
 
 ```
-User Prompt
+用户提示词
     │
     ▼
 ┌──────────────────────────────────────────────────────────┐
-│                    Pipeline Orchestrator                  │
+│                    管线编排器                              │
 │                    (pipeline.py)                          │
 │                                                          │
-│  Research ──▶ Director ──▶ Per-Scene Pipeline ──▶ Merge  │
+│  研究 ──▶ 导演 ──▶ 逐场景管线 ──▶ 合并                     │
 │     │              │              │                       │
 │     ▼              ▼              ▼                       │
 │  ┌──────────────────────────────────────────────────┐    │
-│  │              AI Gateway (ai_gateway/)              │    │
+│  │              AI 网关（ai_gateway/）                │    │
 │  │                                                    │    │
-│  │  Logging MW ──▶ Cost MW ──▶ Retry MW ──▶ Router   │    │
+│  │  日志中间件 ──▶ 成本中间件 ──▶ 重试中间件 ──▶ 路由    │    │
 │  │                                                    │    │
-│  │  story ──▶ DeepSeek     image ──▶ Qwen             │    │
-│  │  voice ──▶ MiniMax      video ──▶ Seedance         │    │
-│  │  search ─▶ Doubao Search                           │    │
+│  │  故事 ──▶ DeepSeek      图像 ──▶ Qwen               │    │
+│  │  语音 ──▶ MiniMax       视频 ──▶ Seedance           │    │
+│  │  搜索 ──▶ Doubao Search                            │    │
 │  └──────────────────────────────────────────────────┘    │
 │                                                          │
-│  Tools: image_prompt · image_gen · tts · draw_animation  │
-│         segmentation · subtitle · merge · concat         │
+│  工具：image_prompt · image_gen · tts · draw_animation   │
+│        segmentation · subtitle · merge · concat          │
 └──────────────────────────────────────────────────────────┘
     │
     ▼
-  Final Video (.mp4) + Subtitles + Cost Logs
+  最终视频 (.mp4) + 字幕 + 成本日志
 ```
 
-For a detailed architecture document, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).  
-For the AI Gateway implementation plan, see [docs/AI_Gateway_Implementation_Plan.md](./docs/AI_Gateway_Implementation_Plan.md).
+详细架构文档请参见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)。  
+AI 网关实现计划请参见 [docs/AI_Gateway_Implementation_Plan.md](./docs/AI_Gateway_Implementation_Plan.md)。
 
 ---
 
-## Tech Stack
+## 技术栈
 
-| Layer | Technology |
-|-------|-----------|
-| LLM Reasoning | DeepSeek V4 Pro |
-| Image Generation | Qwen-Image-2.0-Pro (Alibaba DashScope) |
-| Voice Synthesis (TTS) | MiniMax Speech-2.8-HD |
-| Video Generation | Doubao-Seedance-2.0 (Volcengine Ark) |
-| Web Search | Doubao Search Custom |
-| Image Segmentation | SAM 3 (Segment Anything Model 3) — optional |
-| Animation Engine | NumPy + OpenCV (custom) |
-| Video Processing | FFmpeg + OpenCV |
-| Gateway Config | YAML + env vars |
-| Observability | SQLAlchemy + SQLite (request logs, usage, cost) |
-
----
-
-## Roadmap & Upcoming Features
-
-We are actively developing new features to expand compatibility and ease of deployment:
-
-- **Broad Model Support**: Expanding language model coverage with **Sarvam AI** and additional providers.
-- **Production Database**: PostgreSQL support for multi-user deployments.
-- **Web UI**: Browser-based interface for configuring and running pipelines.
+| 层级 | 技术 |
+|------|------|
+| LLM 推理 | DeepSeek V4 Pro |
+| 图像生成 | Qwen-Image-2.0-Pro（阿里云 DashScope） |
+| 语音合成（TTS） | MiniMax Speech-2.8-HD |
+| 视频生成 | Doubao-Seedance-2.0（火山引擎 Ark） |
+| 联网搜索 | Doubao Search Custom |
+| 图像分割 | SAM 3（Segment Anything Model 3）— 可选 |
+| 动画引擎 | NumPy + OpenCV（自研） |
+| 视频处理 | FFmpeg + OpenCV |
+| 网关配置 | YAML + 环境变量 |
+| 可观测性 | SQLAlchemy + SQLite（请求日志、用量、成本） |
 
 ---
 
-## Completed Features
+## 开发路线图
 
-- **Multi-Provider AI Gateway**: Migrated from Google Gemini-only to a unified multi-provider architecture with DeepSeek, Qwen, MiniMax, Seedance, and Doubao Search.
-- **Standalone Mode (No SAM 3 Server Needed)** : Runs the pipeline out-of-the-box using only API keys. If no `SAM_API_URL` is provided, skips SAM3 segmentation and runs whiteboard drawing in single-pass mode.
-- **Usage & Cost Tracking**: SQLite-backed logging of every AI request with token counts, latency, and cost breakdown by provider.
-- **Automatic Retry with Exponential Backoff**: Configurable per-provider retry policies for resilient API calls.
-- **Native TTS Subtitles**: MiniMax Speech-2.8-HD returns word/sentence-level timestamps directly, eliminating the need for a separate transcription step.
+我们正在积极开发新功能以扩展兼容性和部署便利性：
+
+- **广泛模型支持**：扩展语言模型覆盖范围，新增 **Sarvam AI** 及其他供应商。
+- **生产级数据库**：为多用户部署提供 PostgreSQL 支持。
+- **Web UI**：基于浏览器的管线配置和运行界面。
+
+---
+
+## 已完成功能
+
+- **多供应商 AI 网关**：从仅支持 Google Gemini 迁移至统一的多供应商架构，涵盖 DeepSeek、Qwen、MiniMax、Seedance 和 Doubao Search。
+- **独立运行模式（无需 SAM 3 服务器）**：仅需 API Key 即可开箱运行管线。未配置 `SAM_API_URL` 时，跳过 SAM3 分割阶段，以单通道模式运行白板绘制。
+- **用量与成本追踪**：基于 SQLite 记录每次 AI 请求的 token 数量、延迟和按供应商拆分的费用。
+- **自动重试与指数退避**：按供应商可配置的重试策略，确保 API 调用的可靠性。
+- **原生 TTS 字幕**：MiniMax Speech-2.8-HD 直接返回词/句级别的字幕时间戳，无需额外的转写步骤。

@@ -10,6 +10,45 @@ except ImportError:
     ContextLogger = None  # type: ignore
 
 
+def _sanitize_json_control_chars(text: str) -> str:
+    """
+    Escape literal control characters found inside JSON string values.
+
+    LLMs occasionally emit unescaped newlines, tabs, or other control chars
+    within string fields like 'narration'. Python's json.loads rejects these
+    per RFC 7159. This state machine tracks quote boundaries so structural
+    braces/commas outside strings are left untouched.
+    """
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            continue
+        if ch == '\\':
+            result.append(ch)
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+        if in_string and ord(ch) < 0x20:
+            if ch == '\n':
+                result.append('\\n')
+            elif ch == '\r':
+                result.append('\\r')
+            elif ch == '\t':
+                result.append('\\t')
+            else:
+                result.append(' ')
+            continue
+        result.append(ch)
+    return ''.join(result)
+
+
 def director_tool_fn(
     user_instructions: str,
     research_material: str = None,
@@ -132,7 +171,12 @@ def director_tool_fn(
             prompt=prompt,
             options={"response_format": "json", "max_tokens": 8192, "temperature": 0.7},
         )
-        result = json.loads(response.content)
+        try:
+            result = json.loads(response.content)
+        except json.JSONDecodeError:
+            _emit(logger, "warning", "Director JSON had control characters — sanitizing and retrying...")
+            sanitized = _sanitize_json_control_chars(response.content)
+            result = json.loads(sanitized)
         scene_count = len(result.get("scenes", []))
         _save_to_run_folder(json.dumps(result, indent=2), "video_plan.json")
 

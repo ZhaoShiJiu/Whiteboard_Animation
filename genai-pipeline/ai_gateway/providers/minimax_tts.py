@@ -33,7 +33,7 @@ class MiniMaxTTSProvider(AbstractBaseProvider):
         start = time.time()
 
         # ---- Build payload -------------------------------------------------
-        voice_id = request.options.get("voice_id", "male-qn-qingse")
+        voice_id = request.options.get("voice_id", "Chinese (Mandarin)_Stubborn_Friend")
         speed = float(request.options.get("speed", 1.0))
         vol = float(request.options.get("volume", 1.0))
         pitch = int(request.options.get("pitch", 0))

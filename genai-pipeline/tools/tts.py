@@ -84,10 +84,10 @@ def generate_tts_audio_tool_fn(
             task="voice",
             prompt=text,
             options={
-                "voice_id": "Chinese_calm_streamer_nv1",
-                "speed": 1.0,
+                "voice_id": "Chinese (Mandarin)_Stubborn_Friend",
+                "speed": 1.1,
                 "volume": 1.0,
-                "pitch": 0,
+                "pitch": 1.0,
                 "language_boost": lang_boost,
                 "sample_rate": 32000,
                 "format": "mp3",

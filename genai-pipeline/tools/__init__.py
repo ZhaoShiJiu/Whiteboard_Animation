@@ -11,7 +11,7 @@ from .video_subtitle import burn_subtitles_to_video_tool_fn
 
 from .narration_refiner import refine_narration_tool_fn
 from .draw_animation import draw_animation_tool_fn
-from .utils import set_output_dir, get_video_duration, _emit
+from .utils import set_output_dir, get_video_duration, get_media_duration, _emit
 from .reference_search import reference_search_tool_fn
 from .video_gen import generate_video_seedance_tool_fn
 from .video_gen_happyhorse import generate_video_happyhorse_tool_fn
@@ -33,6 +33,7 @@ __all__ = [
     "draw_animation_tool_fn",
     "set_output_dir",
     "get_video_duration",
+    "get_media_duration",
     "_emit",
     "reference_search_tool_fn",
     "generate_video_seedance_tool_fn",

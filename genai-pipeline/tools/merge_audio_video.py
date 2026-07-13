@@ -70,20 +70,33 @@ def merge_audio_video_tool_fn(
         ]
 
         if audio_dur > video_dur:
-            # Pad the video at the end by cloning the last frame
+            # Audio longer than video — freeze the last frame to match
             pad_seconds = audio_dur - video_dur
-            _emit(logger, "debug", f"Audio longer than video — freezing last frame",
+            _emit(logger, "debug", "Audio longer than video — freezing last frame",
                   extra={"pad_seconds": round(pad_seconds, 2)})
-            # Using tpad filter to clone the last frame
             filter_complex = f"[0:v]tpad=stop_mode=clone:stop_duration={pad_seconds}[v]"
             cmd.extend([
                 "-filter_complex", filter_complex,
                 "-map", "[v]",
                 "-map", "1:a",
-                "-pix_fmt", "yuv420p"  # Ensure compatibility
+                "-pix_fmt", "yuv420p"
+            ])
+        elif video_dur > audio_dur:
+            # Video longer than audio — speed up video to match audio duration
+            speed_factor = video_dur / audio_dur
+            _emit(logger, "debug", "Video longer than audio — speeding up video",
+                  extra={"speed_factor": round(speed_factor, 3),
+                         "video_duration_s": round(video_dur, 2),
+                         "audio_duration_s": round(audio_dur, 2)})
+            filter_complex = f"[0:v]setpts=PTS/{speed_factor}[v]"
+            cmd.extend([
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "1:a",
+                "-pix_fmt", "yuv420p"
             ])
         else:
-            # Video is longer or equal, just map them
+            # Equal duration — direct mapping
             cmd.extend([
                 "-map", "0:v",
                 "-map", "1:a",

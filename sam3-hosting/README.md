@@ -44,7 +44,7 @@ sam3/
 
 ## 🐳 2. Docker Container Setup
 
-The provided [Dockerfile](file:///d:/software-dev/storyboard-ai/sam3-hosting/Dockerfile) is fully configured for a GPU-optimized environment. 
+The provided [Dockerfile](file:///d:/software-dev/whiteboard-animation-ai/sam3-hosting/Dockerfile) is fully configured for a GPU-optimized environment. 
 
 ### Key Docker Details:
 - **Base Image**: Uses `pytorch/pytorch:2.7.0-cuda12.6-cudnn9-runtime` for CUDA execution compatibility.
@@ -77,7 +77,7 @@ gcloud config set project YOUR_PROJECT_ID
 Create a Docker repository in Google Artifact Registry if you don't already have one:
 ```bash
 # Choose a region that supports L4 GPUs, e.g., us-east4 or us-central1
-gcloud artifacts repositories create storyboard-ai-repo \
+gcloud artifacts repositories create whiteboard-animation-ai-repo \
     --repository-format=docker \
     --location=us-east4 \
     --description="Docker repository for SAM 3 model hosting"
@@ -90,22 +90,22 @@ gcloud auth configure-docker us-east4-docker.pkg.dev
 Tag the container image using the Artifact Registry path and push it:
 ```bash
 # Tag the image
-docker tag sam3-service:latest us-east4-docker.pkg.dev/YOUR_PROJECT_ID/storyboard-ai-repo/sam3-service:latest
+docker tag sam3-service:latest us-east4-docker.pkg.dev/YOUR_PROJECT_ID/whiteboard-animation-ai-repo/sam3-service:latest
 
 # Push to Artifact Registry
-docker push us-east4-docker.pkg.dev/YOUR_PROJECT_ID/storyboard-ai-repo/sam3-service:latest
+docker push us-east4-docker.pkg.dev/YOUR_PROJECT_ID/whiteboard-animation-ai-repo/sam3-service:latest
 ```
 
 *(Optional: Use Google Cloud Build to build directly on GCP if your local bandwidth is limited)*
 ```bash
-gcloud builds submit --tag us-east4-docker.pkg.dev/YOUR_PROJECT_ID/storyboard-ai-repo/sam3-service:latest .
+gcloud builds submit --tag us-east4-docker.pkg.dev/YOUR_PROJECT_ID/whiteboard-animation-ai-repo/sam3-service:latest .
 ```
 
 ### Step 4: Deploy the Cloud Run Service with GPU
 Deploy using the `gcloud beta run deploy` command to enable GPU allocations:
 ```bash
 gcloud beta run deploy sam3-service \
-    --image=us-east4-docker.pkg.dev/YOUR_PROJECT_ID/storyboard-ai-repo/sam3-service:latest \
+    --image=us-east4-docker.pkg.dev/YOUR_PROJECT_ID/whiteboard-animation-ai-repo/sam3-service:latest \
     --gpu=1 \
     --gpu-type=nvidia-l4 \
     --cpu=4 \
@@ -127,7 +127,7 @@ gcloud beta run deploy sam3-service \
 
 Once Cloud Run completes the deployment, it will output a Service URL (e.g., `https://sam3-service-xxxx-xx.a.run.app`).
 
-1. Open the configuration file [genai-pipeline/config.py](file:///d:/software-dev/storyboard-ai/genai-pipeline/config.py).
+1. Open the configuration file [genai-pipeline/config.py](file:///d:/software-dev/whiteboard-animation-ai/genai-pipeline/config.py).
 2. Locate the `SAM_API_URL` configuration line (Line 21).
 3. Replace the endpoint URL with your newly deployed service endpoint URL, appending `/predict`:
    ```python

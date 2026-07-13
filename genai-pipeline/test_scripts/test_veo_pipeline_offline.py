@@ -10,7 +10,7 @@ from tools import utils
 
 
 # Define paths
-EXISTING_RUN_DIR = r"D:\software-dev\storyboard-ai\genai-pipeline\output\20260613_010608"
+EXISTING_RUN_DIR = r"D:\software-dev\whiteboard-animation-ai\genai-pipeline\output\20260613_010608"
 EXISTING_IMAGE = os.path.join(EXISTING_RUN_DIR, "generated_image_1781292986.png")
 EXISTING_VIDEO = os.path.join(EXISTING_RUN_DIR, "veo_video_1781293052.mp4")
 

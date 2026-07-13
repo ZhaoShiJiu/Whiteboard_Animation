@@ -36,6 +36,7 @@ from tools import (
     draw_animation_tool_fn,
     set_output_dir,
     get_video_duration,
+    get_media_duration,
     reference_search_tool_fn,
     generate_video_seedance_tool_fn,
     generate_video_happyhorse_tool_fn,
@@ -72,7 +73,7 @@ def run_pipeline(
     run_id: Optional[str] = None,
 ):
     """
-    Run the full storyboard animation pipeline.
+    Run the full whiteboard animation ai pipeline.
 
     Args:
         user_context: The topic / context for the video.
@@ -226,7 +227,7 @@ def _run_pipeline_impl(
     )
 
     final_videos = []
-    prev_image_path = None
+    first_image_path = None
     failed_scenes = []
 
     def process_scene_helper(scene_num, scene, local_prev_image_path):
@@ -319,6 +320,7 @@ def _run_pipeline_impl(
 
             # --- 3b.2. AI Video Generation (if enabled) ---
             veo_video_path = None
+            veo_duration = 0.0
             if video_provider:
                 veo_logger = scene_logger.bind(step_tag="ai_video")
                 veo_prompt = scene.get('veo_prompt', '')
@@ -339,7 +341,11 @@ def _run_pipeline_impl(
 
                 if _is_valid_path(veo_res):
                     veo_video_path = veo_res
-                    veo_logger.info("AI video generated", extra={"path": veo_video_path, "provider": video_provider})
+                    veo_duration = get_media_duration(veo_video_path)
+                    veo_logger.info("AI video generated", extra={
+                        "path": veo_video_path, "provider": video_provider,
+                        "duration_s": round(veo_duration, 1),
+                    })
                 else:
                     veo_logger.warning(
                         f"AI video generation ({video_provider}) failed — continuing without.",
@@ -366,12 +372,72 @@ def _run_pipeline_impl(
                         extra={"error": str(e)},
                     )
 
+            # --- 3e. Narration Refinement (non-critical, can fallback to original) ---
+            # Moved before animation: TTS happens first so animation can target audio duration.
+            refine_logger = scene_logger.bind(step_tag="narration_refine")
+            refine_logger.info("Refining narration...")
+            try:
+                refined = refine_narration_tool_fn(
+                    narration,
+                    current_image_path,
+                    video_duration=None,  # animation not yet generated; no pacing constraint
+                    global_plan=global_plan,
+                    language=language,
+                    logger=refine_logger,
+                )
+                if refined and "Error" not in refined:
+                    narration = refined
+                    refine_logger.info("Narration refined", extra={"new_length": len(narration)})
+                else:
+                    refine_logger.warning("Narration refinement returned error — using Director's original.")
+            except Exception as e:
+                refine_logger.warning(
+                    f"Narration refinement failed (non-critical): {e}. Using Director's original.",
+                    extra={"error": str(e)},
+                )
+
+            # --- 3f. TTS Generation (audio + native subtitles from MiniMax) ---
+            tts_logger = scene_logger.bind(step_tag="tts")
+            tts_logger.info("Generating narration audio with subtitles...")
+            try:
+                audio_path, tts_subtitles_json_path = generate_tts_audio_tool_fn(
+                    narration, language=language, logger=tts_logger
+                )
+            except Exception as e:
+                scene_logger.error(
+                    f"Skipping Scene {scene_num}: TTS generation failed",
+                    extra={"error": str(e), "traceback": traceback.format_exc()},
+                )
+                return None
+
+            if not _is_valid_path(audio_path):
+                scene_logger.error(
+                    f"Skipping Scene {scene_num}: TTS generation produced no audio."
+                )
+                return None
+
+            audio_duration = get_media_duration(audio_path)
+            tts_logger.info("TTS audio generated", extra={
+                "audio_path": audio_path,
+                "duration_s": round(audio_duration, 1),
+            })
+
             # --- 3d. Whiteboard Animation Generation ---
+            # Target animation duration = audio duration minus Veo video duration (if any).
+            # If Veo duration already exceeds audio, target a minimum 1s animation.
+            # The merge step's setpts will handle any remaining gap downstream.
+            wb_target = None
+            if audio_duration > 0:
+                remaining = audio_duration - veo_duration
+                wb_target = max(1.0, remaining) if remaining > 0 else 1.0
+
             anim_logger = scene_logger.bind(step_tag="animation")
-            anim_logger.info("Generating whiteboard animation...")
+            anim_logger.info("Generating whiteboard animation...",
+                             extra={"wb_target_s": round(wb_target, 1) if wb_target else None})
             anim_video_path = draw_animation_tool_fn(
                 current_image_path,
                 segmentation_results_path=seg_json_path,
+                target_duration_sec=wb_target,
                 logger=anim_logger,
             )
 
@@ -416,52 +482,6 @@ def _run_pipeline_impl(
                         f"Concat failed: {concat_err}. Falling back to whiteboard animation only.",
                         extra={"error": str(concat_err)},
                     )
-
-            # --- 3e. Narration Refinement (non-critical, can fallback to original) ---
-            refine_logger = scene_logger.bind(step_tag="narration_refine")
-            v_duration = get_video_duration(combined_video_path)
-            refine_logger.info(f"Refining narration", extra={"video_duration_s": round(v_duration, 1)})
-            try:
-                refined = refine_narration_tool_fn(
-                    narration,
-                    current_image_path,
-                    video_duration=v_duration,
-                    global_plan=global_plan,
-                    language=language,
-                    logger=refine_logger,
-                )
-                if refined and "Error" not in refined:
-                    narration = refined
-                    refine_logger.info("Narration refined", extra={"new_length": len(narration)})
-                else:
-                    refine_logger.warning("Narration refinement returned error — using Director's original.")
-            except Exception as e:
-                refine_logger.warning(
-                    f"Narration refinement failed (non-critical): {e}. Using Director's original.",
-                    extra={"error": str(e)},
-                )
-
-            # --- 3f. TTS Generation (audio + native subtitles from MiniMax) ---
-            tts_logger = scene_logger.bind(step_tag="tts")
-            tts_logger.info("Generating narration audio with subtitles...")
-            try:
-                audio_path, tts_subtitles_json_path = generate_tts_audio_tool_fn(
-                    narration, language=language, logger=tts_logger
-                )
-            except Exception as e:
-                scene_logger.error(
-                    f"Skipping Scene {scene_num}: TTS generation failed",
-                    extra={"error": str(e), "traceback": traceback.format_exc()},
-                )
-                return None
-
-            if not _is_valid_path(audio_path):
-                scene_logger.error(
-                    f"Skipping Scene {scene_num}: TTS generation produced no audio."
-                )
-                return None
-
-            tts_logger.info("TTS audio generated", extra={"audio_path": audio_path})
 
             # --- 3g. Audio-Video Merging ---
             merge_logger = scene_logger.bind(step_tag="merge_av")
@@ -578,9 +598,10 @@ def _run_pipeline_impl(
         )
         for i, scene in enumerate(scenes):
             scene_num = i + 1
-            res = process_scene_helper(scene_num, scene, prev_image_path)
+            res = process_scene_helper(scene_num, scene, first_image_path)
             if res:
-                prev_image_path = res["image_path"]
+                if first_image_path is None:
+                    first_image_path = res["image_path"]
                 final_videos.append(res["final_scene_video"])
             else:
                 failed_scenes.append(scene_num)
@@ -604,7 +625,7 @@ def _run_pipeline_impl(
     if len(final_videos) >= 2:
         merge_logger = logger.bind(step_tag="final_merge")
         merge_logger.info("Step 4: Concatenating all scenes into final video...")
-        final_video_path = os.path.join(output_dir, "storyboard_final_video.mp4")
+        final_video_path = os.path.join(output_dir, "whiteboard-animation-ai_final_video.mp4")
         result = concatenate_videos_tool_fn(final_videos, final_video_path, logger=merge_logger)
 
         total_elapsed = (time.perf_counter() - t_pipeline_start)
@@ -641,7 +662,7 @@ def _run_pipeline_impl(
 
 
 if __name__ == "__main__":
-    print("--- Storyboard AI Pipeline ---")
+    print("--- Whiteboard Animation AI Pipeline ---")
     print()
     context = input("Enter the context for your video: ")
     res_choice = input("Select research mode: [1] Deep Research, [2] Web Search (Fast), [3] None (default 2): ").strip()

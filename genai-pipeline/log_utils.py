@@ -1,5 +1,5 @@
 """
-Structured logging system for the Storyboard AI pipeline.
+Structured logging system for the Whiteboard Animation AI pipeline.
 
 Provides:
 - ContextLogger: hierarchical logger with run_id / scene_id / step_tag binding
@@ -459,7 +459,7 @@ def setup_logging(
     console_lvl = getattr(logging, (console_level or log_level).upper(), level)
 
     # Create a dedicated logger for this pipeline run (not the root logger)
-    logger_name = f"storyboard.{run_id}"
+    logger_name = f"whiteboard-animation-ai.{run_id}"
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.DEBUG)  # handlers control their own levels
     logger.propagate = False        # don't bubble to root
@@ -511,7 +511,7 @@ def teardown_logging(run_id: str) -> None:
     Closes file handlers and stops the DB writer thread. Call this after
     the pipeline completes to release resources.
     """
-    logger_name = f"storyboard.{run_id}"
+    logger_name = f"whiteboard-animation-ai.{run_id}"
     logger = logging.getLogger(logger_name)
 
     for handler in list(logger.handlers):
@@ -529,7 +529,7 @@ def teardown_logging(run_id: str) -> None:
 
 def get_run_logger(run_id: str) -> Optional[ContextLogger]:
     """Retrieve an existing run logger by run_id, or None if not found."""
-    logger_name = f"storyboard.{run_id}"
+    logger_name = f"whiteboard-animation-ai.{run_id}"
     logger = logging.getLogger(logger_name)
     if logger.handlers:
         return ContextLogger(logger=logger, run_id=run_id)

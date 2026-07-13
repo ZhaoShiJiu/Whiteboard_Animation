@@ -33,7 +33,7 @@ def reference_search_tool_fn(
         search_query = urllib.parse.quote(query)
         search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={search_query}&utf8=&format=json"
 
-        req = urllib.request.Request(search_url, headers={'User-Agent': 'StoryboardAI/1.0'})
+        req = urllib.request.Request(search_url, headers={'User-Agent': 'WhiteboardAnimationAI/1.0'})
         with urllib.request.urlopen(req) as response:
             search_data = json.loads(response.read().decode('utf-8'))
 
@@ -49,7 +49,7 @@ def reference_search_tool_fn(
         title_encoded = urllib.parse.quote(best_title)
         image_url_api = f"https://en.wikipedia.org/w/api.php?action=query&titles={title_encoded}&prop=pageimages&format=json&pithumbsize=1000"
 
-        req = urllib.request.Request(image_url_api, headers={'User-Agent': 'StoryboardAI/1.0'})
+        req = urllib.request.Request(image_url_api, headers={'User-Agent': 'WhiteboardAnimationAI/1.0'})
         with urllib.request.urlopen(req) as response:
             image_data = json.loads(response.read().decode('utf-8'))
 
@@ -73,7 +73,7 @@ def reference_search_tool_fn(
         # Save to global output dir or current dir
         output_path = os.path.join(utils.GLOBAL_OUTPUT_DIR, filename) if utils.GLOBAL_OUTPUT_DIR else filename
 
-        req = urllib.request.Request(image_url, headers={'User-Agent': 'StoryboardAI/1.0'})
+        req = urllib.request.Request(image_url, headers={'User-Agent': 'WhiteboardAnimationAI/1.0'})
         with urllib.request.urlopen(req) as response:
             with open(output_path, 'wb') as f:
                 f.write(response.read())

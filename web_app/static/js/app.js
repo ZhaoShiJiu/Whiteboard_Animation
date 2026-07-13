@@ -1,5 +1,5 @@
 /**
- * Storyboard AI — 前端交互应用
+ * Whiteboard Animation AI — 前端交互应用
  * 处理导航、表单提交、任务轮询、画廊展示和费用统计。
  */
 

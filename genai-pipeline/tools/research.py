@@ -31,7 +31,7 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> 
         f"1. Research thoroughly as if you had access to all human knowledge.\n"
         f"2. Include key dates, milestones, important contextual facts, and nuanced details.\n"
         f"3. Organise the report with clear headings and sections.\n"
-        f"4. This will be used as source material for a documentary/storyboard script, "
+        f"4. This will be used as source material for a documentary/whiteboard animation script, "
         f"so make it rich with narrative-worthy details.\n"
         f"5. Write in a professional, authoritative tone.\n"
         f"6. Aim for at least 1000 words of substantive content.\n\n"
@@ -77,7 +77,7 @@ def web_grounded_research_tool_fn(context: str, logger: Optional["ContextLogger"
     prompt = (
         f"Perform a comprehensive analysis to provide a detailed, factual summary "
         f"about: {context}. Include key dates, milestones, and important contextual "
-        f"facts. This will be used as a source for a documentary/storyboard script.\n\n"
+        f"facts. This will be used as a source for a documentary/whiteboard animation script.\n\n"
         f"Output the summary directly. No meta-commentary."
     )
 

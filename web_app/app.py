@@ -1,5 +1,5 @@
 """
-Storyboard AI — Web Frontend
+Whiteboard Animation AI — Web Frontend
 Flask backend that wraps the GenAI pipeline and serves the web UI.
 """
 
@@ -202,7 +202,7 @@ def list_outputs():
                 continue
             # Check for run.log
             log_file = run_dir / "run.log"
-            video_path = run_dir / "storyboard_final_video.mp4"
+            video_path = run_dir / "whiteboard-animation-ai_final_video.mp4"
             single_scenes = sorted(run_dir.glob("scene_*_final.mp4"))
             runs.append({
                 "run_id": run_dir.name,
@@ -481,7 +481,7 @@ _startup_port = int(os.environ.get("WEB_PORT", 5000))
 _startup_debug = os.environ.get("WEB_DEBUG", "1") == "1"
 
 _web_logger.info("=" * 60)
-_web_logger.info("  Storyboard AI — Web UI")
+_web_logger.info("  Whiteboard Animation AI — Web UI")
 _web_logger.info("  Listening on http://%s:%s", _startup_host, _startup_port)
 _web_logger.info("  Debug mode: %s", _startup_debug)
 _web_logger.info("  Logs directory: %s", _logs_dir)

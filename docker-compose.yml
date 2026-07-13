@@ -1,9 +1,9 @@
 services:
-  storyboard:
+  whiteboard-animation-ai:
     build: .
     pull_policy: never
-    image: storyboard-ai:latest
-    container_name: storyboard-ai
+    image: whiteboard-animation-ai:latest
+    container_name: whiteboard-animation-ai
     stdin_open: true
     tty: true
     env_file:
@@ -26,4 +26,4 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-        labels: "storyboard"
+        labels: "whiteboard-animation-ai"

@@ -89,6 +89,26 @@ def get_video_duration(video_path: str) -> float:
         return 0.0
 
 
+def get_media_duration(file_path: str) -> float:
+    """
+    Returns the duration of a media file (audio or video) in seconds using ffprobe.
+    Works with both audio (mp3, wav, etc.) and video formats.
+    """
+    import subprocess
+    import json
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_format", file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        return float(data['format']['duration'])
+    except Exception as e:
+        print(f"Error getting media duration for {file_path}: {e}")
+        return 0.0
+
+
 def postprocess_ai_video(
     output_path: str,
     image_path: str,

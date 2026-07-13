@@ -1,5 +1,5 @@
 # =============================================================================
-# Storyboard AI — Python Dependencies
+# Whiteboard Animation AI — Python Dependencies
 # =============================================================================
 
 # Core utilities (config, image processing, video I/O)

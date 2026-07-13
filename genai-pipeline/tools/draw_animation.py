@@ -102,6 +102,48 @@ def draw_hand_on_img(drawing, hand, drawing_coord_x, drawing_coord_y, hand_mask_
     return drawing
 
 
+def _count_ink_blocks(img_thresh, resize_wd, resize_ht, split_len, object_mask=None, black_pixel_threshold=10):
+    """
+    Pre-scan: replicates the grid + nearest-neighbor traversal of draw_masked_object
+    but only counts ink blocks without writing any frames.
+
+    Returns the total number of ink-containing grid blocks for duration estimation.
+    """
+    img_thresh_copy = img_thresh.copy()
+    if object_mask is not None:
+        object_mask_black_ind = np.where(object_mask == 0)
+        img_thresh_copy[object_mask_black_ind] = 255
+
+    n_cuts_vertical = int(math.ceil(resize_ht / split_len))
+    n_cuts_horizontal = int(math.ceil(resize_wd / split_len))
+
+    pad_h = n_cuts_vertical * split_len - resize_ht
+    pad_w = n_cuts_horizontal * split_len - resize_wd
+    if pad_h > 0 or pad_w > 0:
+        img_thresh_copy = cv2.copyMakeBorder(img_thresh_copy, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=255)
+
+    grid_of_cuts = np.array(np.split(img_thresh_copy, n_cuts_horizontal, axis=-1))
+    grid_of_cuts = np.array(np.split(grid_of_cuts, n_cuts_vertical, axis=-2))
+
+    cut_having_black = (grid_of_cuts < black_pixel_threshold) * 1
+    cut_having_black = np.sum(np.sum(cut_having_black, axis=-1), axis=-1)
+    cut_black_indices = np.array(np.where(cut_having_black > 0)).T
+
+    if len(cut_black_indices) == 0:
+        return 0
+
+    count = 1  # first block
+    selected_ind = 0
+    while len(cut_black_indices) > 1:
+        selected_ind_val = cut_black_indices[selected_ind]
+        cut_black_indices = np.delete(cut_black_indices, selected_ind, axis=0)
+        euc_arr = euc_dist(cut_black_indices, selected_ind_val)
+        selected_ind = np.argmin(euc_arr)
+        count += 1
+
+    return count
+
+
 def draw_masked_object(
     drawn_frame, img_thresh, img_orig, video_object, hand, hand_mask_inv, hand_ht, hand_wd,
     resize_ht, resize_wd, split_len, object_mask=None, skip_rate=5, black_pixel_threshold=10
@@ -202,6 +244,8 @@ def draw_animation_tool_fn(
     object_skip_rate: int = 7,
     bg_object_skip_rate: int = 12,
     end_duration_sec: int = 1,
+    target_duration_sec: float = None,
+    max_skip_rate: int = 25,
     logger: Optional["ContextLogger"] = None,
 ) -> str:
     """
@@ -218,9 +262,17 @@ def draw_animation_tool_fn(
         resize_wd: Resize image to this width before processing. Default 1920.
         resize_ht: Resize image to this height before processing. Default 1080.
         split_len: Grid size for ink detection. Smaller is more detailed but slower. Default 10.
-        object_skip_rate: Write 1 frame for every N grid blocks drawn for objects. Default 8.
-        bg_object_skip_rate: Skip rate for background drawing (usually faster). Default 14.
-        end_duration_sec: How many seconds to show the finished image at the end. Default 3.
+        object_skip_rate: Write 1 frame for every N grid blocks drawn for objects. Default 7.
+            Used as fallback when target_duration_sec is None.
+        bg_object_skip_rate: Skip rate for background drawing (usually faster). Default 12.
+            Used as fallback when target_duration_sec is None.
+        end_duration_sec: How many seconds to show the finished image at the end. Default 1.
+        target_duration_sec: Target total video duration in seconds. When set, a pre-scan
+            pass counts ink blocks and calculates per-object skip_rates to match the target.
+            When None, default skip_rates are used (original behavior). Default None.
+        max_skip_rate: Upper bound for calculated skip_rate to prevent visual degradation.
+            If the required skip_rate exceeds this, the rate is clamped and the remaining
+            duration gap is handled downstream by the merge step (setpts speedup). Default 25.
         logger: Optional ContextLogger for structured logging.
 
     Returns:
@@ -249,7 +301,8 @@ def draw_animation_tool_fn(
 
     _emit(logger, "info", f"Generating whiteboard animation ({mode} mode)...",
           extra={"image_path": image_path, "mode": mode, "resolution": f"{resize_wd}x{resize_ht}",
-                 "fps": frame_rate, "split_len": split_len})
+                 "fps": frame_rate, "split_len": split_len,
+                 "target_duration_s": round(target_duration_sec, 1) if target_duration_sec else None})
 
     # Prepare output video
     timestamp = int(time.time())
@@ -267,7 +320,7 @@ def draw_animation_tool_fn(
     drawn_frame = np.full((resize_ht, resize_wd, 3), 255, dtype=np.uint8)
 
     if has_segmentation:
-        # SUB-OBJECT ANIMATION MODE
+        # ── SUB-OBJECT ANIMATION MODE ──────────────────────────────────
         with open(segmentation_results_path, 'r') as f:
             seg_data = json.load(f)
 
@@ -291,8 +344,7 @@ def draw_animation_tool_fn(
 
             reconstructed_masks.append(full_obj_mask)
 
-        # 2. Merge overlapping masks
-        # We use a simple adjacency-based merging (Disjoint Set Union style)
+        # 2. Merge overlapping masks (Disjoint Set Union)
         num_masks = len(reconstructed_masks)
         parent = list(range(num_masks))
 
@@ -312,7 +364,6 @@ def draw_animation_tool_fn(
                 m1 = reconstructed_masks[i]
                 m2 = reconstructed_masks[j]
 
-                # Calculate intersection
                 intersect = cv2.bitwise_and(m1, m2)
                 intersect_area = np.sum(intersect == 255)
 
@@ -321,7 +372,6 @@ def draw_animation_tool_fn(
                     area2 = np.sum(m2 == 255)
                     min_area = min(area1, area2)
 
-                    # If significant overlap, merge them
                     if min_area > 0 and (intersect_area / min_area) > 0.3:
                         union(i, j)
 
@@ -336,12 +386,67 @@ def draw_animation_tool_fn(
         _emit(logger, "debug", f"Merged segmentation masks",
               extra={"original_count": num_masks, "merged_count": len(merged_groups)})
 
-        # 3. Animate the merged groups
+        # ── 2.5 Pre-scan: count ink blocks & calculate adaptive skip rates ──
+        group_skip_rates = {}
+        bg_skip_rate_to_use = bg_object_skip_rate
+
+        if target_duration_sec is not None:
+            available_duration = max(1.0, target_duration_sec - end_duration_sec)
+            target_frames = int(available_duration * frame_rate)
+
+            # Pre-scan each merged group
+            group_blocks = {}
+            total_blocks = 0
+            for root, merged_mask in merged_groups.items():
+                blocks = _count_ink_blocks(img_thresh, resize_wd, resize_ht, split_len,
+                                          object_mask=merged_mask)
+                group_blocks[root] = blocks
+                total_blocks += blocks
+
+            # Pre-scan background (build its final mask first)
+            pre_scan_bg_mask = background_mask.copy()
+            for root, merged_mask in merged_groups.items():
+                bg_obj_ind = np.where(merged_mask == 255)
+                pre_scan_bg_mask[bg_obj_ind] = 0
+
+            bg_blocks = _count_ink_blocks(img_thresh, resize_wd, resize_ht, split_len=20,
+                                          object_mask=pre_scan_bg_mask)
+            total_blocks += bg_blocks
+
+            _emit(logger, "debug", "Pre-scan complete",
+                  extra={"total_blocks": total_blocks, "group_blocks": group_blocks,
+                         "bg_blocks": bg_blocks, "target_frames": target_frames})
+
+            # Allocate target frames proportionally by block count
+            if total_blocks > 0:
+                for root, blocks in group_blocks.items():
+                    group_target_frames = max(1, int(target_frames * blocks / total_blocks))
+                    raw_skip = blocks / group_target_frames
+                    group_skip_rates[root] = max(1, min(max_skip_rate, int(round(raw_skip))))
+
+                bg_target_frames = max(1, int(target_frames * bg_blocks / total_blocks))
+                raw_bg_skip = bg_blocks / bg_target_frames
+                bg_skip_rate_to_use = max(1, min(max_skip_rate, int(round(raw_bg_skip))))
+            else:
+                # No ink blocks found — use max rates, show static image
+                for root in merged_groups:
+                    group_skip_rates[root] = max_skip_rate
+                bg_skip_rate_to_use = max_skip_rate
+
+            _emit(logger, "info", "Adaptive skip rates calculated",
+                  extra={"group_rates": group_skip_rates, "bg_rate": bg_skip_rate_to_use,
+                         "max_skip_rate": max_skip_rate, "target_duration_s": target_duration_sec})
+        else:
+            # No target — use default rates for all groups
+            for root in merged_groups:
+                group_skip_rates[root] = object_skip_rate
+
+        # 3. Animate the merged groups with calculated skip rates
         for root, merged_mask in merged_groups.items():
-            # Animate drawing this specific merged object
+            skip = group_skip_rates.get(root, object_skip_rate)
             draw_masked_object(
                 drawn_frame, img_thresh, img, video_object, hand, hand_mask_inv, hand_ht, hand_wd,
-                resize_ht, resize_wd, split_len, object_mask=merged_mask, skip_rate=object_skip_rate
+                resize_ht, resize_wd, split_len, object_mask=merged_mask, skip_rate=skip
             )
 
             # Mark this object's area as 'drawn' in the background mask
@@ -351,13 +456,33 @@ def draw_animation_tool_fn(
         # Draw the remaining area (background)
         draw_masked_object(
             drawn_frame, img_thresh, img, video_object, hand, hand_mask_inv, hand_ht, hand_wd,
-            resize_ht, resize_wd, split_len=20, object_mask=background_mask, skip_rate=bg_object_skip_rate
+            resize_ht, resize_wd, split_len=20, object_mask=background_mask, skip_rate=bg_skip_rate_to_use
         )
     else:
-        # SINGLE PASS MODE
+        # ── SINGLE PASS MODE ─────────────────────────────────────────────
+        skip_to_use = object_skip_rate
+
+        if target_duration_sec is not None:
+            available_duration = max(1.0, target_duration_sec - end_duration_sec)
+            target_frames = int(available_duration * frame_rate)
+            blocks = _count_ink_blocks(img_thresh, resize_wd, resize_ht, split_len)
+
+            _emit(logger, "debug", "Pre-scan complete",
+                  extra={"blocks": blocks, "target_frames": target_frames,
+                         "target_duration_s": target_duration_sec})
+
+            if blocks > 0 and target_frames > 0:
+                raw_skip = blocks / target_frames
+                skip_to_use = max(1, min(max_skip_rate, int(round(raw_skip))))
+                _emit(logger, "info", "Adaptive skip rate calculated",
+                      extra={"blocks": blocks, "skip_rate": skip_to_use,
+                             "max_skip_rate": max_skip_rate})
+            else:
+                skip_to_use = max_skip_rate
+
         draw_masked_object(
             drawn_frame, img_thresh, img, video_object, hand, hand_mask_inv, hand_ht, hand_wd,
-            resize_ht, resize_wd, split_len, skip_rate=object_skip_rate
+            resize_ht, resize_wd, split_len, skip_rate=skip_to_use
         )
 
     # Finally, show the full-color final image for a few seconds

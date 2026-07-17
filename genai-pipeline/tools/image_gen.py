@@ -2,7 +2,8 @@ import os
 import uuid
 from typing import Optional
 
-from .utils import GLOBAL_OUTPUT_DIR, _emit
+from . import utils
+from .utils import _emit
 
 try:
     from log_utils import ContextLogger
@@ -34,6 +35,9 @@ def image_gen_tool_fn(
             prompt
             + " Ensure the generated image is in 16:9 aspect ratio (1920x1080). "
             "CRITICAL: DO NOT draw any hands, human arms, markers, pens, or people drawing. "
+            "CRITICAL: DO NOT draw any picture frames, borders, decorative edges, "
+            "wooden frames, metal frames, or any enclosing boundary around the artwork. "
+            "The artwork must extend edge-to-edge with NO frame of any kind. "
             "Draw ONLY the pure artwork on the whiteboard."
         )
 
@@ -76,7 +80,7 @@ def image_gen_tool_fn(
         # Save generated image to file
         image_bytes = response.content
         filename = f"generated_image_{uuid.uuid4().hex[:8]}.png"
-        output_path = os.path.join(GLOBAL_OUTPUT_DIR, filename) if GLOBAL_OUTPUT_DIR else filename
+        output_path = os.path.join(utils.GLOBAL_OUTPUT_DIR, filename) if utils.GLOBAL_OUTPUT_DIR else filename
 
         with open(output_path, "wb") as f:
             f.write(image_bytes)

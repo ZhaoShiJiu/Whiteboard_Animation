@@ -236,12 +236,16 @@ function _pollJob(jobId) {
         setStatus('idle');
         bar.style.width = '100%';
         toast('视频生成完成！', 'success');
+        const displayPath = job.display_path || job.result || '—';
         document.getElementById('jobResult').innerHTML = `
           <div style="padding:12px;background:var(--color-bg);border-radius:var(--radius-sm);">
-            <strong>输出文件：</strong> <code style="font-size:0.8rem;">${job.result || '就绪'}</code>
+            <strong>✅ 视频已生成</strong>
+            <div style="margin-top:6px;font-size:0.82rem;color:var(--color-text-secondary);">
+              保存位置：<code style="font-size:0.8rem;word-break:break-all;">${_escapeHtml(displayPath)}</code>
+            </div>
           </div>
           <button class="btn btn-outline" style="margin-top:12px;" onclick="navigateTo('gallery')">
-            前往画廊查看 →
+            前往画廊查看 & 下载 →
           </button>
         `;
         refreshDashboard();

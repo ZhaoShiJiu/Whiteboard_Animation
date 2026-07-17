@@ -1,6 +1,7 @@
 import os
 import json
-import subprocess
+import re
+import shutil
 from typing import Optional
 
 from . import utils
@@ -19,7 +20,10 @@ def burn_subtitles_to_video_tool_fn(
     logger: Optional["ContextLogger"] = None,
 ) -> str:
     """
-    Burns subtitles into a video file using FFmpeg.
+    Export SRT subtitle sidecar file and copy video as-is.
+
+    Subtitles are exported as an SRT sidecar file alongside the video.
+    The video itself is copied unchanged (no subtitle burn-in).
 
     Args:
         video_path: Path to the input video file.
@@ -28,7 +32,7 @@ def burn_subtitles_to_video_tool_fn(
         logger: Optional ContextLogger for structured logging.
 
     Returns:
-        Path to the video file with burned-in subtitles.
+        Path to the copied video file (with SRT sidecar alongside it).
     """
     if not os.path.exists(video_path):
         return f"Error: Video file not found at {video_path}"
@@ -45,59 +49,127 @@ def burn_subtitles_to_video_tool_fn(
             _emit(logger, "warning", "No subtitles found in JSON — copying original video.")
             return video_path
 
-        _emit(logger, "info", f"Burning {len(subtitles)} subtitle segments into video...")
+        _emit(logger, "info", f"Exporting SRT for {len(subtitles)} subtitle segments...")
 
-        # 1. Create a temporary SRT file
-        srt_path = subtitles_json_path.replace(".json", ".srt")
-        with open(srt_path, 'w', encoding='utf-8') as f:
-            for i, sub in enumerate(subtitles):
-                start = sub['start']
-                end = sub['end']
-                text = sub['text']
-
-                # Format timestamps: HH:MM:SS,mmm
-                def format_ts(seconds):
-                    hrs = int(seconds // 3600)
-                    mins = int((seconds % 3600) // 60)
-                    secs = int(seconds % 60)
-                    milli = int((seconds * 1000) % 1000)
-                    return f"{hrs:02d}:{mins:02d}:{secs:02d},{milli:03d}"
-
-                f.write(f"{i+1}\n")
-                f.write(f"{format_ts(start)} --> {format_ts(end)}\n")
-                f.write(f"{text}\n\n")
-
-        # 2. Run FFmpeg to burn subtitles
+        # Decide output base name for subtitle sidecar files
         if not output_path:
             base, ext = os.path.splitext(video_path)
             output_path = f"{base}_with_subtitles{ext}"
+        base_no_ext, _ = os.path.splitext(output_path)
 
-        # Note: 'subtitles' filter requires the path to be escaped properly for FFmpeg
-        # especially on Windows with backslashes.
-        escaped_srt = srt_path.replace('\\', '/').replace(':', '\\:')
+        # Format timestamps: HH:MM:SS,mmm (SRT)
+        def _format_srt_ts(seconds):
+            hrs = int(seconds // 3600)
+            mins = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            milli = int((seconds * 1000) % 1000)
+            return f"{hrs:02d}:{mins:02d}:{secs:02d},{milli:03d}"
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-vf", f"subtitles='{escaped_srt}'",
-            "-c:a", "copy",  # Keep original audio
-            output_path
-        ]
+        # 1. Write persistent SRT sidecar file
+        srt_path = f"{base_no_ext}.srt"
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            for i, sub in enumerate(subtitles):
+                f.write(f"{i+1}\n")
+                f.write(f"{_format_srt_ts(sub['start'])} --> {_format_srt_ts(sub['end'])}\n")
+                f.write(f"{sub['text']}\n\n")
+        _emit(logger, "info", "SRT subtitles exported", extra={"path": srt_path})
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            _emit(logger, "error", "FFmpeg subtitle burn failed",
-                  extra={"stderr": result.stderr[:300], "return_code": result.returncode})
-            return f"Error during FFmpeg subtitle burn: {result.stderr}"
-
-        # Clean up SRT
-        if os.path.exists(srt_path):
-            os.remove(srt_path)
-
-        _emit(logger, "info", "Subtitles burned successfully", extra={"path": output_path})
+        # 2. Copy video as-is (subtitles provided as SRT sidecar only)
+        shutil.copy2(video_path, output_path)
+        _emit(logger, "info", "Video copied (SRT sidecar exported)", extra={"path": output_path})
         return output_path
 
     except Exception as e:
-        _emit(logger, "error", f"Subtitle burn error: {e}", extra={"error": str(e)})
+        _emit(logger, "error", f"Subtitle export error: {e}", extra={"error": str(e)})
         return f"Error in burn_subtitles_to_video_tool: {str(e)}"
+
+
+def merge_srt_files_tool_fn(
+    srt_paths: list,
+    video_durations: list,
+    output_path: str,
+    logger: Optional["ContextLogger"] = None,
+) -> str:
+    """
+    Merge multiple per-scene SRT files into one combined SRT,
+    offsetting timestamps by cumulative video durations.
+
+    Args:
+        srt_paths: Ordered list of per-scene SRT file paths.
+        video_durations: Corresponding video durations in seconds (same order as srt_paths).
+        output_path: Path for the merged SRT file.
+        logger: Optional ContextLogger.
+
+    Returns:
+        Path to the merged SRT file, or an error string.
+    """
+    if len(srt_paths) != len(video_durations):
+        return f"Error: srt_paths ({len(srt_paths)}) and video_durations ({len(video_durations)}) must have same length."
+
+    # Pattern: HH:MM:SS,mmm --> HH:MM:SS,mmm
+    ts_pattern = re.compile(
+        r'(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})'
+    )
+
+    def _ts_to_seconds(h, m, s, ms):
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+    def _seconds_to_srt_ts(seconds):
+        hrs = int(seconds // 3600)
+        mins = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        milli = int((seconds * 1000) % 1000)
+        return f"{hrs:02d}:{mins:02d}:{secs:02d},{milli:03d}"
+
+    merged_lines = []
+    cumulative_offset = 0.0
+    global_seq = 1
+
+    for i, (srt_path, dur) in enumerate(zip(srt_paths, video_durations)):
+        if not os.path.exists(srt_path):
+            _emit(logger, "warning", "SRT file not found, skipping",
+                  extra={"path": srt_path})
+            cumulative_offset += dur
+            continue
+
+        with open(srt_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Process each line: renumber indices, offset timestamps
+        lines = content.strip().split('\n')
+        new_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            ts_match = ts_pattern.match(line)
+            if ts_match:
+                # Insert sequential index before timestamp
+                new_lines.append(str(global_seq))
+                global_seq += 1
+                # Offset the timestamp
+                start_s = _ts_to_seconds(
+                    ts_match.group(1), ts_match.group(2),
+                    ts_match.group(3), ts_match.group(4))
+                end_s = _ts_to_seconds(
+                    ts_match.group(5), ts_match.group(6),
+                    ts_match.group(7), ts_match.group(8))
+                start_s += cumulative_offset
+                end_s += cumulative_offset
+                new_lines.append(
+                    f"{_seconds_to_srt_ts(start_s)} --> {_seconds_to_srt_ts(end_s)}")
+            elif line.isdigit():
+                # Skip original index lines — already renumbered above
+                continue
+            else:
+                new_lines.append(line)
+
+        merged_lines.extend(new_lines)
+        cumulative_offset += dur
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(merged_lines) + '\n')
+
+    _emit(logger, "info", "Merged SRT created",
+          extra={"path": output_path, "scene_count": len(srt_paths)})
+    return output_path

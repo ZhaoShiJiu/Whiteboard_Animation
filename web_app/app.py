@@ -435,7 +435,19 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
         )
 
         if result and os.path.exists(result):
-            _update_job(job_id, "completed", 100, "Video ready!", result=result)
+            # Convert Docker-internal path to a host-friendly relative path so the
+            # user can actually find the file on their machine.
+            # Docker:  /app/genai-pipeline/output/run_xxx/video.mp4
+            # becomes: genai-pipeline/output/run_xxx/video.mp4
+            # Local:   D:\...\genai-pipeline\output\run_xxx\video.mp4
+            # becomes: genai-pipeline\output\run_xxx\video.mp4
+            display_result = result
+            output_marker = os.path.join("genai-pipeline", "output")
+            if output_marker in result:
+                display_result = result.split(output_marker, 1)[1].lstrip(os.sep).lstrip("/")
+                display_result = f"genai-pipeline/output/{display_result}"
+            _update_job(job_id, "completed", 100, "Video ready!",
+                        result=result, display_path=display_result)
             _web_logger.info("Job %s: Completed successfully — %s", job_id, result)
         else:
             _update_job(job_id, "failed", 100, "Pipeline finished but no video was produced.",
@@ -447,7 +459,7 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
         _web_logger.error("Job %s: Failed — %s\n%s", job_id, exc, traceback.format_exc())
 
 
-def _update_job(job_id, status, progress, message, result=None, error=None):
+def _update_job(job_id, status, progress, message, result=None, error=None, display_path=None):
     with jobs_lock:
         job = jobs.get(job_id)
         if job:
@@ -456,6 +468,8 @@ def _update_job(job_id, status, progress, message, result=None, error=None):
             job["message"] = message
             if result:
                 job["result"] = result
+            if display_path:
+                job["display_path"] = display_path
             if error:
                 job["error"] = error
 

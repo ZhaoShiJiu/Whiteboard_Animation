@@ -1,0 +1,4 @@
+Scene: A majestic Bengal tiger standing on a rocky cliff at sunset, looking out over a vast jungle valley below.
+Text Overlay: The King of the Jungle
+Prompt: A majestic Bengal tiger standing on a rocky cliff at sunset, looking out over a vast jungle valley below, wide shot, tiger in silhouette on the left third, golden sky filling the right side, dramatic scene, whiteboard animation style, clean white background, simple hand-drawn black line ink strokes, flat with no shading or gradients, selective vibrant color on the golden sky, text "The King of the Jungle" in bold black marker-style font at the bottom right corner.
+---

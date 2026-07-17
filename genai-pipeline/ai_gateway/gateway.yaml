@@ -14,7 +14,7 @@ providers:
 
   qwen:
     type: image
-    model: qwen-image-2.0-pro-2026-04-22
+    model: qwen-image-2.0-pro-2026-06-22
     api_key_env: DASHSCOPE_API_KEY
     # DashScope multimodal generation endpoint
     endpoint: https://llm-jwgnh8j0gdstnsi2.cn-beijing.maas.aliyuncs.com/api/v1

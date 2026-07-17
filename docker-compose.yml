@@ -19,6 +19,8 @@ services:
       - ./genai-pipeline/output:/app/genai-pipeline/output
       # Persist AI Gateway observability DB
       - ./genai-pipeline/ai_gateway:/app/genai-pipeline/ai_gateway
+      # Persist test outputs outside the container
+      - ./genai-pipeline/test_output:/app/genai-pipeline/test_output
     ports:
       - "5000:5000"
     logging:

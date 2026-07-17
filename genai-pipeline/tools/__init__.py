@@ -7,7 +7,7 @@ from .segmentation import segmentation_tool_fn
 from .merge_audio_video import merge_audio_video_tool_fn
 from .concatenate_videos import concatenate_videos_tool_fn
 
-from .video_subtitle import burn_subtitles_to_video_tool_fn
+from .video_subtitle import burn_subtitles_to_video_tool_fn, merge_srt_files_tool_fn
 
 from .narration_refiner import refine_narration_tool_fn
 from .draw_animation import draw_animation_tool_fn
@@ -28,6 +28,7 @@ __all__ = [
     "concatenate_videos_tool_fn",
 
     "burn_subtitles_to_video_tool_fn",
+    "merge_srt_files_tool_fn",
 
     "refine_narration_tool_fn",
     "draw_animation_tool_fn",

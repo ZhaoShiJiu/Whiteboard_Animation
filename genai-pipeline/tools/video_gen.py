@@ -8,7 +8,8 @@ import os
 import time
 from typing import Optional
 
-from .utils import GLOBAL_OUTPUT_DIR, _emit, postprocess_ai_video
+from . import utils
+from .utils import _emit, postprocess_ai_video
 
 try:
     from log_utils import ContextLogger
@@ -64,7 +65,7 @@ def generate_video_seedance_tool_fn(
         video_bytes = response.content
         timestamp = int(time.time())
         filename = f"seedance_video_{timestamp}.mp4"
-        output_path = os.path.join(GLOBAL_OUTPUT_DIR, filename) if GLOBAL_OUTPUT_DIR else filename
+        output_path = os.path.join(utils.GLOBAL_OUTPUT_DIR, filename) if utils.GLOBAL_OUTPUT_DIR else filename
 
         with open(output_path, "wb") as f:
             f.write(video_bytes)

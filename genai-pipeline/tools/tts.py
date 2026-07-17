@@ -4,7 +4,8 @@ import re
 import time
 from typing import Optional
 
-from .utils import GLOBAL_OUTPUT_DIR, _emit
+from . import utils
+from .utils import _emit
 
 try:
     from log_utils import ContextLogger
@@ -84,10 +85,10 @@ def generate_tts_audio_tool_fn(
             task="voice",
             prompt=text,
             options={
-                "voice_id": "Chinese (Mandarin)_Stubborn_Friend",
+                "voice_id": "ttv-voice-2026071413353626-u8Uw2HEW",
                 "speed": 1.1,
-                "volume": 1.0,
-                "pitch": 1.0,
+                "volume": 1.1,
+                "pitch": 2.0,
                 "language_boost": lang_boost,
                 "sample_rate": 32000,
                 "format": "mp3",
@@ -100,7 +101,7 @@ def generate_tts_audio_tool_fn(
         audio_bytes = response.content
         timestamp = int(time.time())
         filename = f"generated_audio_{timestamp}.mp3"
-        output_dir = GLOBAL_OUTPUT_DIR if GLOBAL_OUTPUT_DIR else "."
+        output_dir = utils.GLOBAL_OUTPUT_DIR if utils.GLOBAL_OUTPUT_DIR else "."
         audio_path = os.path.join(output_dir, filename)
 
         with open(audio_path, "wb") as f:

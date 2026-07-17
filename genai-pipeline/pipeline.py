@@ -32,6 +32,7 @@ from tools import (
     merge_audio_video_tool_fn,
     concatenate_videos_tool_fn,
     burn_subtitles_to_video_tool_fn,
+    merge_srt_files_tool_fn,
     refine_narration_tool_fn,
     draw_animation_tool_fn,
     set_output_dir,
@@ -227,6 +228,8 @@ def _run_pipeline_impl(
     )
 
     final_videos = []
+    scene_srt_paths = []
+    scene_video_durations = []
     first_image_path = None
     failed_scenes = []
 
@@ -499,11 +502,12 @@ def _run_pipeline_impl(
 
             merge_logger.info("Audio-Video merged", extra={"path": merged_video_path})
 
-            # --- 3h. Subtitle Burning (subtitles come directly from TTS) ---
+            # --- 3h. Subtitle SRT Export (subtitles come directly from TTS) ---
             final_scene_video = merged_video_path
+            srt_path = None
             if tts_subtitles_json_path and _is_valid_path(tts_subtitles_json_path):
                 sub_logger = scene_logger.bind(step_tag="subtitle_burn")
-                sub_logger.info("Burning subtitles into video...")
+                sub_logger.info("Exporting SRT sidecar...")
                 subtitled_output = os.path.join(output_dir, f"scene_{scene_num}_final.mp4")
                 try:
                     final_sv = burn_subtitles_to_video_tool_fn(
@@ -511,12 +515,13 @@ def _run_pipeline_impl(
                     )
                     if _is_valid_path(final_sv):
                         final_scene_video = final_sv
-                        sub_logger.info("Subtitles burned successfully", extra={"path": final_scene_video})
+                        srt_path = os.path.join(output_dir, f"scene_{scene_num}_final.srt")
+                        sub_logger.info("SRT sidecar exported", extra={"path": final_scene_video, "srt": srt_path})
                     else:
-                        sub_logger.warning("Subtitle burning failed — using merged video without subtitles.")
+                        sub_logger.warning("SRT export failed — using merged video without subtitles.")
                 except Exception as e:
                     sub_logger.warning(
-                        f"Subtitle burning error: {e}. Using merged video without subtitles.",
+                        f"SRT export error: {e}. Using merged video without subtitles.",
                         extra={"error": str(e)},
                     )
             else:
@@ -551,7 +556,8 @@ def _run_pipeline_impl(
                 "final_video": final_scene_video,
                 "image_path": current_image_path,
             })
-            return {"scene_num": scene_num, "final_scene_video": final_scene_video, "image_path": current_image_path}
+            return {"scene_num": scene_num, "final_scene_video": final_scene_video,
+                    "image_path": current_image_path, "srt_path": srt_path}
 
         except Exception as e:
             scene_logger.exception(
@@ -591,6 +597,9 @@ def _run_pipeline_impl(
             results.sort(key=lambda x: x["scene_num"])
             for res in results:
                 final_videos.append(res["final_scene_video"])
+                if res.get("srt_path"):
+                    scene_srt_paths.append(res["srt_path"])
+                    scene_video_durations.append(get_media_duration(res["final_scene_video"]))
     else:
         logger.info(
             "Step 3: Processing Scenes Sequentially",
@@ -603,6 +612,9 @@ def _run_pipeline_impl(
                 if first_image_path is None:
                     first_image_path = res["image_path"]
                 final_videos.append(res["final_scene_video"])
+                if res.get("srt_path"):
+                    scene_srt_paths.append(res["srt_path"])
+                    scene_video_durations.append(get_media_duration(res["final_scene_video"]))
             else:
                 failed_scenes.append(scene_num)
 
@@ -628,6 +640,15 @@ def _run_pipeline_impl(
         final_video_path = os.path.join(output_dir, "whiteboard-animation-ai_final_video.mp4")
         result = concatenate_videos_tool_fn(final_videos, final_video_path, logger=merge_logger)
 
+        # 5. Merge SRT subtitles
+        if scene_srt_paths:
+            srt_logger = logger.bind(step_tag="srt_merge")
+            srt_logger.info("Step 5: Merging per-scene SRT files...")
+            merged_srt_path = os.path.join(output_dir, "whiteboard-animation-ai_final_video.srt")
+            merge_srt_files_tool_fn(
+                scene_srt_paths, scene_video_durations, merged_srt_path, logger=srt_logger
+            )
+
         total_elapsed = (time.perf_counter() - t_pipeline_start)
         logger.info(
             "Pipeline Complete!",
@@ -640,6 +661,15 @@ def _run_pipeline_impl(
         )
         return result
     elif len(final_videos) == 1:
+        # Merge SRT (single scene — copy with zero offset)
+        if scene_srt_paths:
+            srt_logger = logger.bind(step_tag="srt_merge")
+            srt_logger.info("Step 5: Merging per-scene SRT files...")
+            merged_srt_path = os.path.join(output_dir, "whiteboard-animation-ai_final_video.srt")
+            merge_srt_files_tool_fn(
+                scene_srt_paths, scene_video_durations, merged_srt_path, logger=srt_logger
+            )
+
         total_elapsed = (time.perf_counter() - t_pipeline_start)
         logger.info(
             "Pipeline Complete (Single Scene)!",

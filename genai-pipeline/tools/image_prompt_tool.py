@@ -64,6 +64,7 @@ def prompt_tool_fn(
     NEGATIVE PROMPT / STRICT FORBIDDEN:
     - DO NOT under any circumstances draw hands, human arms, markers, pens, or any person physically drawing the final picture!
     - Erase any concept of the artist from the scene.
+    - DO NOT draw any picture frames, borders, decorative edges, wooden/metal frames, or boundaries around the artwork. The image must have NO frame of any kind — the artwork should fill the entire canvas edge-to-edge without any enclosing border.
     - Provide ONLY the final completed artwork standing alone upon the white background.
 
     COLOR ENHANCEMENT RULE:

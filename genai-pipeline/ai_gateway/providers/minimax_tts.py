@@ -111,24 +111,26 @@ class MiniMaxTTSProvider(AbstractBaseProvider):
         content = bytes.fromhex(audio_hex)
 
         # ---- Extract subtitle timestamps ----------------------------------
-        # MiniMax returns a subtitle_file URL (not inline data).
-        # Download the JSON from that URL and convert ms → seconds.
+        # MiniMax returns a subtitle_file URL in data.data.
+        # The JSON is an array; actual field names are time_begin/time_end (ms, float).
+        # Official docs claim start_time/end_time — we probe both for safety.
         subtitles = None
-        subtitle_file_url = data.get("data", {}).get("subtitle_file") or data.get("subtitle_file")
-
+        subtitle_file_url = (
+            data.get("data", {}).get("subtitle_file")
+            or data.get("subtitle_file")
+        )
         if subtitle_file_url:
             try:
                 sub_resp = requests.get(subtitle_file_url, timeout=30)
                 if sub_resp.status_code == 200:
                     sub_data = sub_resp.json()
-                    # The subtitle JSON uses milliseconds; convert to seconds
-                    raw_list = sub_data if isinstance(sub_data, list) else sub_data.get("subtitles", [])
+                    raw_list = sub_data if isinstance(sub_data, list) else []
                     if raw_list:
                         subtitles = [
                             {
-                                "start": float(s.get("start", s.get("start_time", 0))) / 1000.0,
-                                "end": float(s.get("end", s.get("end_time", 0))) / 1000.0,
-                                "text": s.get("text", s.get("sentence", "")),
+                                "start": float(s.get("time_begin", s.get("start_time", 0))) / 1000.0,
+                                "end": float(s.get("time_end", s.get("end_time", 0))) / 1000.0,
+                                "text": str(s.get("text", "")),
                             }
                             for s in raw_list
                         ]

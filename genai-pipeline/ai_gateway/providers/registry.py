@@ -4,6 +4,8 @@ Provider registry — maps provider names to their adapter classes.
 
 from .base import AbstractBaseProvider
 from .deepseek import DeepSeekProvider
+from .doubao_embedding import DoubaoEmbeddingProvider
+from .doubao_image import DoubaoImageProvider
 from .doubao_search import DoubaoSearchProvider
 from .happyhorse import HappyHorseProvider
 from .minimax_tts import MiniMaxTTSProvider
@@ -13,6 +15,8 @@ from .seedance import SeedanceProvider
 #: Map provider type/name → adapter class
 PROVIDER_CLASSES: dict[str, type[AbstractBaseProvider]] = {
     "deepseek": DeepSeekProvider,
+    "doubao_embedding": DoubaoEmbeddingProvider,
+    "doubao_image": DoubaoImageProvider,
     "doubao_search": DoubaoSearchProvider,
     "happyhorse": HappyHorseProvider,
     "qwen": QwenImageProvider,
@@ -23,6 +27,8 @@ PROVIDER_CLASSES: dict[str, type[AbstractBaseProvider]] = {
 #: Map provider type → usage type string for ai_usage table
 PROVIDER_TYPE_MAP: dict[str, str] = {
     "deepseek": "llm",
+    "doubao_embedding": "embedding",
+    "doubao_image": "image",
     "doubao_search": "search",
     "happyhorse": "video",
     "qwen": "image",

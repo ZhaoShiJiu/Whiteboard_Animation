@@ -29,7 +29,7 @@ class MiniMaxTTSProvider(AbstractBaseProvider):
 
     # ------------------------------------------------------------------
     def generate(self, request: GatewayRequest) -> GatewayResponse:
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request, "_request_id", None) or str(uuid.uuid4())
         start = time.time()
 
         # ---- Build payload -------------------------------------------------

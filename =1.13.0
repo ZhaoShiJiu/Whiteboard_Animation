@@ -1,0 +1,13 @@
+Collecting alembic
+  Downloading alembic-1.18.5-py3-none-any.whl.metadata (7.2 kB)
+Requirement already satisfied: SQLAlchemy>=1.4.23 in d:\code\project_pycharm\whiteboard animation\venv\lib\site-packages (from alembic) (2.0.51)
+Collecting Mako (from alembic)
+  Using cached mako-1.3.12-py3-none-any.whl.metadata (2.9 kB)
+Requirement already satisfied: typing-extensions>=4.12 in d:\code\project_pycharm\whiteboard animation\venv\lib\site-packages (from alembic) (4.16.0)
+Requirement already satisfied: greenlet>=1 in d:\code\project_pycharm\whiteboard animation\venv\lib\site-packages (from SQLAlchemy>=1.4.23->alembic) (3.5.3)
+Requirement already satisfied: MarkupSafe>=0.9.2 in d:\code\project_pycharm\whiteboard animation\venv\lib\site-packages (from Mako->alembic) (3.0.3)
+Downloading alembic-1.18.5-py3-none-any.whl (264 kB)
+Using cached mako-1.3.12-py3-none-any.whl (78 kB)
+Installing collected packages: Mako, alembic
+
+Successfully installed Mako-1.3.12 alembic-1.18.5

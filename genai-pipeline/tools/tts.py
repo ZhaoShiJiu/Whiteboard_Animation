@@ -85,10 +85,10 @@ def generate_tts_audio_tool_fn(
             task="voice",
             prompt=text,
             options={
-                "voice_id": "ttv-voice-2026071413353626-u8Uw2HEW",
+                "voice_id": "Chinese_crisp_podcaster_nv1",
                 "speed": 1.1,
                 "volume": 1.1,
-                "pitch": 2.0,
+                "pitch": 1.0,
                 "language_boost": lang_boost,
                 "sample_rate": 32000,
                 "format": "mp3",

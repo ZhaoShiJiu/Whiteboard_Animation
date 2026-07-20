@@ -68,6 +68,7 @@ def run_pipeline(
     use_internet_image_search: bool = True,
     fast_mode: bool = False,
     language: str = "english",
+    image_provider: str = "qwen",
     video_provider: Optional[str] = None,
     veo_direction_by_director: bool = False,
     logger: Optional[ContextLogger] = None,
@@ -83,6 +84,7 @@ def run_pipeline(
         use_internet_image_search: Download Wikipedia reference images.
         fast_mode: Process scenes in parallel via ThreadPoolExecutor.
         language: Narration language (e.g. 'english', 'hindi', 'chinese').
+        image_provider: Image generation provider — "qwen" (default), "doubao_image".
         video_provider: Video generation provider — "seedance", "happyhorse", or None to skip.
         veo_direction_by_director: Let Director generate video prompts.
         logger: Optional pre-configured ContextLogger. If None, one is created.
@@ -98,9 +100,9 @@ def run_pipeline(
     # 0. Setup Output Directory
     # In Docker: OUTPUT_DIR env var points to the mounted volume
     # Local dev: falls back to os.getcwd()/output
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Use run_id as directory name so it matches the DB record (includes UUID suffix)
     output_base = os.environ.get("OUTPUT_DIR", os.path.join(os.getcwd(), "output"))
-    output_dir = os.path.join(output_base, f"run_{timestamp}")
+    output_dir = os.path.join(output_base, run_id)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -113,6 +115,24 @@ def run_pipeline(
 
     set_output_dir(output_dir)
 
+    # -- Persist run record to database ---------------------------------------
+    from tools import db_utils as _db
+    _db.create_run(
+        run_id=run_id,
+        context=user_context,
+        language=language,
+        settings={
+            "do_research": do_research,
+            "do_web_search": do_web_search,
+            "use_internet_image_search": use_internet_image_search,
+            "fast_mode": fast_mode,
+            "image_provider": image_provider,
+            "video_provider": video_provider,
+            "veo_direction_by_director": veo_direction_by_director,
+        },
+        output_dir=output_dir,
+    )
+
     t_pipeline_start = time.perf_counter()
 
     logger.info(
@@ -124,6 +144,7 @@ def run_pipeline(
             "do_web_search": do_web_search,
             "use_internet_image_search": use_internet_image_search,
             "fast_mode": fast_mode,
+            "image_provider": image_provider,
             "video_provider": video_provider,
             "veo_direction_by_director": veo_direction_by_director,
             "output_dir": output_dir,
@@ -139,6 +160,7 @@ def run_pipeline(
             use_internet_image_search=use_internet_image_search,
             fast_mode=fast_mode,
             language=language,
+            image_provider=image_provider,
             video_provider=video_provider,
             veo_direction_by_director=veo_direction_by_director,
             output_dir=output_dir,
@@ -146,6 +168,16 @@ def run_pipeline(
             logger=logger,
             t_pipeline_start=t_pipeline_start,
         )
+    except Exception:
+        logger.exception("Pipeline crashed with unhandled exception")
+        from tools import db_utils as _db_err
+        _db_err.update_run(
+            run_id,
+            status="failed",
+            error=traceback.format_exc(),
+            completed_at=datetime.datetime.utcnow(),
+        )
+        return None
     finally:
         teardown_logging(run_id)
 
@@ -157,6 +189,7 @@ def _run_pipeline_impl(
     use_internet_image_search: bool,
     fast_mode: bool,
     language: str,
+    image_provider: str,
     video_provider: Optional[str],
     veo_direction_by_director: bool,
     output_dir: str,
@@ -227,6 +260,15 @@ def _run_pipeline_impl(
         },
     )
 
+    # -- Persist director output to DB --
+    from tools import db_utils as _db2
+    _db2.update_run(
+        run_id,
+        video_plan_json=video_plan,
+        scene_count=len(scenes),
+        research_report=research_report,
+    )
+
     final_videos = []
     scene_srt_paths = []
     scene_video_durations = []
@@ -252,6 +294,17 @@ def _run_pipeline_impl(
                     "emotional_beat": emotional_beat,
                     "narration_length": len(narration),
                 },
+            )
+
+            # -- Persist scene record to DB --
+            from tools import db_utils as _db3
+            scene_db_id = _db3.create_scene(
+                run_id=run_id,
+                scene_index=scene_num,
+                narration=narration,
+                description=description,
+                visual_setup=visual_setup,
+                text_overlay=text_overlay,
             )
 
             # --- 3.a.0 Reference Search ---
@@ -292,17 +345,23 @@ def _run_pipeline_impl(
                 scene_logger.error(
                     f"Skipping Scene {scene_num}: Image prompt generation returned empty."
                 )
+                _db3.update_scene(scene_db_id, status="failed", error="Image prompt generation returned empty.")
                 return None
 
             # --- 3b. Generate Image ---
             img_gen_logger = scene_logger.bind(step_tag="image_gen")
             img_gen_logger.info("Generating image...")
+
+            # Update scene with image prompt
+            _db3.update_scene(scene_db_id, image_prompt=img_prompt)
+
             try:
                 image_path = image_gen_tool_fn(
                     img_prompt,
                     reference_image_path=local_prev_image_path,
                     subject_reference_image_path=subject_image_path,
                     logger=img_gen_logger,
+                    provider=image_provider,
                 )
             except Exception as e:
                 scene_logger.error(
@@ -424,6 +483,16 @@ def _run_pipeline_impl(
                 "audio_path": audio_path,
                 "duration_s": round(audio_duration, 1),
             })
+
+            # -- Persist TTS output to DB --
+            _db3.update_scene(scene_db_id, audio_path=audio_path, srt_content=None)
+            _db3.create_media_asset(
+                run_id=run_id,
+                scene_id=scene_db_id,
+                asset_type="audio",
+                file_path=audio_path,
+                is_temporary=True,
+            )
 
             # --- 3d. Whiteboard Animation Generation ---
             # Target animation duration = audio duration minus Veo video duration (if any).
@@ -556,6 +625,10 @@ def _run_pipeline_impl(
                 "final_video": final_scene_video,
                 "image_path": current_image_path,
             })
+
+            # -- Mark scene done in DB --
+            _db3.update_scene(scene_db_id, status="done")
+
             return {"scene_num": scene_num, "final_scene_video": final_scene_video,
                     "image_path": current_image_path, "srt_path": srt_path}
 
@@ -659,6 +732,16 @@ def _run_pipeline_impl(
                 "scenes_failed": failed,
             },
         )
+
+        # -- Mark run as completed in DB --
+        from tools import db_utils as _db_final
+        _db_final.update_run(
+            run_id,
+            status="completed",
+            final_video=result,
+            cost_total=None,  # aggregated from ai_usage later
+            completed_at=datetime.datetime.utcnow(),
+        )
         return result
     elif len(final_videos) == 1:
         # Merge SRT (single scene — copy with zero offset)
@@ -678,6 +761,13 @@ def _run_pipeline_impl(
                 "total_elapsed_s": round(total_elapsed, 1),
             },
         )
+        from tools import db_utils as _db_final2
+        _db_final2.update_run(
+            run_id,
+            status="completed",
+            final_video=final_videos[0],
+            completed_at=datetime.datetime.utcnow(),
+        )
         return final_videos[0]
     else:
         total_elapsed = (time.perf_counter() - t_pipeline_start)
@@ -687,6 +777,14 @@ def _run_pipeline_impl(
                 "total_elapsed_s": round(total_elapsed, 1),
                 "failed_scenes": failed_scenes,
             },
+        )
+        # -- Mark run as failed in DB --
+        from tools import db_utils as _db_fail
+        _db_fail.update_run(
+            run_id,
+            status="failed",
+            error="No scenes produced a final video.",
+            completed_at=datetime.datetime.utcnow(),
         )
         return None
 

@@ -199,7 +199,7 @@ class ColoredConsoleFormatter(logging.Formatter):
 
 class DBLogHandler(logging.Handler):
     """
-    Write log records to the ai_gateway.db run_logs table.
+    Write log records to the run_logs table via SQLAlchemy ORM.
 
     Uses a queue + background thread to avoid blocking the caller on DB I/O.
     Falls back silently if the DB is unavailable.
@@ -237,40 +237,34 @@ class DBLogHandler(logging.Handler):
         with self._lock:
             self._queue.append(entry)
 
-    def _worker(self) -> None:
-        """Background thread that drains the queue into SQLite."""
-        import sqlite3
-
-        # Ensure the table exists
+    @contextmanager
+    def _get_session(self):
+        """Try to get a session from the global ORM, or create a local one."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS run_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT,
-                    scene_id INTEGER,
-                    step_tag TEXT,
-                    level TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    extra_json TEXT,
-                    loc TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_run_logs_run_id ON run_logs(run_id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_run_logs_level ON run_logs(level)"
-            )
-            conn.commit()
-            conn.close()
-        except Exception:
-            # DB not reachable — disable DB logging
-            self._running = False
+            from ai_gateway.db.connection import get_session as _get_global_session
+            with _get_global_session() as session:
+                yield session
             return
+        except (RuntimeError, ImportError):
+            pass
+
+        # Fallback: create a local engine to the same DB file
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session as _Session
+        engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+        session = _Session(bind=engine)
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def _worker(self) -> None:
+        """Background thread that drains the queue into the DB via ORM."""
+        from ai_gateway.db.models import RunLog
 
         while self._running:
             batch = []
@@ -280,16 +274,8 @@ class DBLogHandler(logging.Handler):
 
             if batch:
                 try:
-                    conn = sqlite3.connect(self.db_path)
-                    conn.executemany(
-                        """INSERT INTO run_logs
-                           (run_id, scene_id, step_tag, level, message, extra_json, loc)
-                           VALUES (:run_id, :scene_id, :step_tag, :level, :message,
-                                   :extra_json, :loc)""",
-                        batch,
-                    )
-                    conn.commit()
-                    conn.close()
+                    with self._get_session() as session:
+                        session.add_all([RunLog(**entry) for entry in batch])
                 except Exception:
                     pass  # silently drop if DB is gone
 
@@ -301,16 +287,9 @@ class DBLogHandler(logging.Handler):
             self._queue.clear()
         if remaining:
             try:
-                conn = sqlite3.connect(self.db_path)
-                conn.executemany(
-                    """INSERT INTO run_logs
-                       (run_id, scene_id, step_tag, level, message, extra_json, loc)
-                       VALUES (:run_id, :scene_id, :step_tag, :level, :message,
-                               :extra_json, :loc)""",
-                    remaining,
-                )
-                conn.commit()
-                conn.close()
+                from ai_gateway.db.models import RunLog
+                with self._get_session() as session:
+                    session.add_all([RunLog(**entry) for entry in remaining])
             except Exception:
                 pass
 

@@ -177,6 +177,7 @@ document.getElementById('newProjectForm').addEventListener('submit', async (e) =
     research_mode: document.getElementById('researchSelect').value,
     reference_images: document.getElementById('refImagesToggle').checked,
     fast_mode: document.getElementById('fastModeToggle').checked,
+    image_provider: document.getElementById('imageProviderSelect').value || 'qwen',
     video_provider: videoProviderSelect.value || null,
     veo_direction: document.getElementById('veoDirToggle').checked,
   };

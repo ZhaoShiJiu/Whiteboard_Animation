@@ -59,7 +59,7 @@ class DoubaoSearchProvider(AbstractBaseProvider):
         Returns:
             GatewayResponse，content 为清洗后的搜索结果列表 list[dict]。
         """
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request, "_request_id", None) or str(uuid.uuid4())
         start = time.time()
 
         # ---- 从 options 提取搜索参数 ---------------------------------------

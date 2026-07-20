@@ -15,6 +15,7 @@ from .utils import set_output_dir, get_video_duration, get_media_duration, _emit
 from .reference_search import reference_search_tool_fn
 from .video_gen import generate_video_seedance_tool_fn
 from .video_gen_happyhorse import generate_video_happyhorse_tool_fn
+from .image_library import process_and_store_image, retrieve_best_match, get_image_bytes
 
 __all__ = [
     "research_tool_fn",
@@ -38,5 +39,8 @@ __all__ = [
     "_emit",
     "reference_search_tool_fn",
     "generate_video_seedance_tool_fn",
-    "generate_video_happyhorse_tool_fn"
+    "generate_video_happyhorse_tool_fn",
+    "process_and_store_image",
+    "retrieve_best_match",
+    "get_image_bytes",
 ]

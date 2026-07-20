@@ -43,5 +43,9 @@ ENV OUTPUT_DIR=/app/genai-pipeline/output
 # ---- Expose port -----------------------------------------------------
 EXPOSE 5000
 
-# ---- Run Flask web service -------------------------------------------
-CMD ["python", "-m", "flask", "--app", "web_app/app.py", "run", "--host=0.0.0.0", "--port=5000"]
+# ---- Pre-start DB migration → Flask web service --------------------------
+# 1. migrate_db.py initialises the DB and runs Alembic ONCE with a single
+#    engine, before any background threads touch the SQLite file.
+# 2. Then Flask starts — Gateway will see the already-initialised engine and
+#    skip init_db entirely (idempotent).
+CMD sh -c "python genai-pipeline/migrate_db.py && exec python -m flask --app web_app/app.py run --host=0.0.0.0 --port=5000"

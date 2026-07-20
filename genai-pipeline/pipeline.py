@@ -91,6 +91,134 @@ def _wait_for_approval(runtime: PipelineRuntime) -> bool:
             return True
 
 
+def _compress_script(
+    scenes: list,
+    language: str,
+    budget: int,
+    is_cjk: bool = False,
+    logger: Optional[ContextLogger] = None,
+) -> list:
+    """
+    Compress an over-budget script to fit the target duration.
+
+    Merges all scene narrations, sends them to the LLM with an aggressive
+    compression prompt, then redistributes the compressed text back across
+    scenes proportionally.
+
+    Args:
+        scenes: Director's scenes list.
+        language: Target language.
+        budget: Max word/character count.
+        is_cjk: True if CJK language (character-based counting).
+        logger: Optional logger.
+    Returns:
+        Scenes list with compressed narrations.
+    """
+    unit = "characters" if is_cjk else "words"
+
+    # Build the full script for compression
+    script_parts = []
+    for s in scenes:
+        script_parts.append(f"[Scene {s.get('scene_number', '?')} — {s.get('emotional_beat', '')}]\n{s.get('narration', '')}")
+    full_script = "\n\n---\n\n".join(script_parts)
+
+    compress_prompt = f"""You are an expert script editor. The following whiteboard animation script
+is TOO LONG for a {budget}-{unit} budget. COMPRESS IT AGGRESSIVELY.
+
+RULES:
+1. CUT entire sentences that are not essential to the core narrative. Surgery, not sanding.
+2. MERGE similar points. One clear idea beats three fuzzy ones.
+3. KEEP the most emotionally compelling and story-worthy content.
+4. PRESERVE the hook, the curiosity gaps between scenes, and the payoff/CTA.
+5. PRESERVE the [Scene N] markers and scene structure.
+6. PRESERVE all key facts, numbers, and dates that are essential.
+7. DELETE: filler phrases, redundant explanations, throat-clearing, over-explaining.
+8. The compressed script MUST feel tighter, punchier, and MORE engaging — not worse.
+9. Everything MUST remain in {language}.
+
+Output the compressed script with the SAME [Scene N] markers and structure.
+Each scene's narration should still be distinct. No meta-commentary."""
+
+    try:
+        from ai_gateway import generate
+
+        if logger:
+            logger.info(f"Calling LLM for script compression ({unit} budget: {budget})...")
+        response = generate(
+            task="story",
+            prompt=f"{compress_prompt}\n\nORIGINAL SCRIPT:\n\n{full_script}",
+            options={"max_tokens": 4096, "temperature": 0.5},
+        )
+        compressed_text = response.content
+
+        # Parse scene narrations back from compressed output
+        import re
+        pattern = r'\[Scene (\d+)[^\]]*\](.*?)(?=\[Scene \d+\]|\Z)'
+        matches = re.findall(pattern, compressed_text, re.DOTALL)
+
+        if matches and len(matches) >= len(scenes) * 0.5:
+            # Build a map from scene number to compressed narration
+            compressed_map = {}
+            for scene_num_str, narration in matches:
+                try:
+                    sn = int(scene_num_str)
+                    compressed_map[sn] = narration.strip()
+                except ValueError:
+                    continue
+
+            # Apply compressed narrations back to scenes
+            for s in scenes:
+                sn = s.get("scene_number", 0)
+                if sn in compressed_map and len(compressed_map[sn]) > 10:
+                    s["narration"] = compressed_map[sn]
+
+            new_total = sum(
+                len(s.get("narration", "")) if is_cjk else len(s.get("narration", "").split())
+                for s in scenes
+            )
+            if logger:
+                logger.info(
+                    f"Script compressed: {new_total} {unit} (budget: {budget})",
+                    extra={"new_total": new_total, "budget": budget})
+        else:
+            # Fallback: trim each scene proportionally
+            if logger:
+                logger.warning("LLM compression parsing failed — falling back to proportional trim.")
+            for s in scenes:
+                narration = s.get("narration", "")
+                if is_cjk:
+                    if len(narration) > 0:
+                        # Keep first ~70% of characters (trim from the end)
+                        trim_len = int(len(narration) * 0.7)
+                        # Find a sentence boundary near trim_len
+                        for sep in ['。', '！', '？', '\n', '；']:
+                            pos = narration.rfind(sep, 0, trim_len)
+                            if pos > trim_len * 0.6:
+                                trim_len = pos + 1
+                                break
+                        s["narration"] = narration[:trim_len]
+                else:
+                    words = narration.split()
+                    if len(words) > 0:
+                        trim_count = int(len(words) * 0.7)
+                        # Find sentence boundary
+                        trimmed = ' '.join(words[:trim_count])
+                        for sep in ['. ', '! ', '? ', '\n']:
+                            pos = trimmed.rfind(sep)
+                            if pos > trim_count * 0.6:
+                                trimmed = trimmed[:pos + 1]
+                                break
+                        s["narration"] = trimmed
+
+        return scenes
+
+    except Exception as e:
+        if logger:
+            logger.warning(f"Script compression failed: {e}. Using original script.",
+                           extra={"error": str(e)})
+        return scenes
+
+
 # --- Main Pipeline ---
 
 def run_pipeline(
@@ -103,6 +231,7 @@ def run_pipeline(
     image_provider: str = "qwen",
     video_provider: Optional[str] = None,
     veo_direction_by_director: bool = False,
+    target_duration_sec: int = 240,
     logger: Optional[ContextLogger] = None,
     run_id: Optional[str] = None,
     job_id: Optional[str] = None,
@@ -122,6 +251,7 @@ def run_pipeline(
         image_provider: Image generation provider — "qwen" (default), "doubao_image".
         video_provider: Video generation provider — "seedance", "happyhorse", or None to skip.
         veo_direction_by_director: Let Director generate video prompts.
+        target_duration_sec: Target video duration in seconds (default 240 = 4 min).
         logger: Optional pre-configured ContextLogger. If None, one is created.
         run_id: Optional run identifier. Auto-generated if None.
         job_id: Optional job identifier (links the run to a web-frontend job).
@@ -171,6 +301,7 @@ def run_pipeline(
             "image_provider": image_provider,
             "video_provider": video_provider,
             "veo_direction_by_director": veo_direction_by_director,
+            "target_duration_sec": target_duration_sec,
         },
         output_dir=output_dir,
     )
@@ -192,6 +323,7 @@ def run_pipeline(
             "image_provider": image_provider,
             "video_provider": video_provider,
             "veo_direction_by_director": veo_direction_by_director,
+            "target_duration_sec": target_duration_sec,
             "output_dir": output_dir,
             "run_id": run_id,
         },
@@ -208,6 +340,7 @@ def run_pipeline(
             image_provider=image_provider,
             video_provider=video_provider,
             veo_direction_by_director=veo_direction_by_director,
+            target_duration_sec=target_duration_sec,
             output_dir=output_dir,
             run_id=run_id,
             logger=logger,
@@ -238,6 +371,7 @@ def _run_pipeline_impl(
     image_provider: str,
     video_provider: Optional[str],
     veo_direction_by_director: bool,
+    target_duration_sec: int,
     output_dir: str,
     run_id: str,
     logger: ContextLogger,
@@ -333,6 +467,7 @@ def _run_pipeline_impl(
             language=language,
             enable_veo=(video_provider is not None),
             veo_direction_by_director=veo_direction_by_director,
+            target_duration_sec=target_duration_sec,
             logger=director_logger,
             feedback=runtime.feedback if runtime else "",
         )
@@ -403,6 +538,48 @@ def _run_pipeline_impl(
 
         break  # approved — move on
 
+    # ── A3: Script Compression (if total narration exceeds budget) ──
+    cjk_langs = {"chinese", "japanese", "korean", "中文", "日语", "韩语",
+                 "mandarin", "cantonese", "zh", "ja", "ko", "zh-cn", "zh-tw"}
+    is_cjk_lang = language.lower() in cjk_langs
+    # Calculate budget: CJK ~200 chars/min, others ~140 words/min
+    target_minutes = target_duration_sec / 60.0
+    if is_cjk_lang:
+        char_budget = int(target_minutes * 200)
+        # Count total characters in all scene narrations
+        total_chars = sum(len(s.get("narration", "")) for s in scenes)
+        if total_chars > char_budget * 1.1:  # 10% tolerance
+            compress_logger = logger.bind(step_tag="script_compress")
+            compress_logger.info(
+                f"Script too long ({total_chars} chars, budget {char_budget}) — compressing...",
+                extra={"total_chars": total_chars, "char_budget": char_budget},
+            )
+            scenes = _compress_script(
+                scenes, language, char_budget, is_cjk=True, logger=compress_logger
+            )
+        else:
+            logger.info(
+                f"Script within budget ({total_chars}/{char_budget} chars) — no compression needed.",
+                extra={"total_chars": total_chars, "char_budget": char_budget},
+            )
+    else:
+        word_budget = int(target_minutes * 140)
+        total_words = sum(len(s.get("narration", "").split()) for s in scenes)
+        if total_words > word_budget * 1.1:
+            compress_logger = logger.bind(step_tag="script_compress")
+            compress_logger.info(
+                f"Script too long ({total_words} words, budget {word_budget}) — compressing...",
+                extra={"total_words": total_words, "word_budget": word_budget},
+            )
+            scenes = _compress_script(
+                scenes, language, word_budget, is_cjk=False, logger=compress_logger
+            )
+        else:
+            logger.info(
+                f"Script within budget ({total_words}/{word_budget} words) — no compression needed.",
+                extra={"total_words": total_words, "word_budget": word_budget},
+            )
+
     # 审批通过后立刻更新状态
     if runtime is not None:
         from tools import db_utils as _db_j2b
@@ -424,6 +601,7 @@ def _run_pipeline_impl(
             visual_setup = scene.get('visual_setup', '')
             summary = scene.get('summary', '')
             emotional_beat = scene.get('emotional_beat', '')
+            visual_strategy = scene.get('visual_strategy', '')
             search_query = scene.get('search_query', '')
             text_overlay = scene.get('text_overlay', '')
 
@@ -473,6 +651,8 @@ def _run_pipeline_impl(
                     visual_setup=visual_setup,
                     text_overlay=text_overlay,
                     global_plan=global_plan,
+                    emotional_beat=emotional_beat,
+                    visual_strategy=visual_strategy,
                     logger=prompt_logger,
                 )
             except Exception as e:
@@ -967,6 +1147,11 @@ if __name__ == "__main__":
         veo_dir_choice = input("Let Director generate video prompts? [Y/n] (default Y): ").strip().lower()
         veo_direction_by_director = False if veo_dir_choice in ['n', 'no'] else True
 
+    dur_choice = input("Target video duration in seconds [180/240/300] (default 240): ").strip()
+    target_duration_sec = 240
+    if dur_choice in ('180', '240', '300'):
+        target_duration_sec = int(dur_choice)
+
     run_pipeline(
         context,
         do_research=do_research,
@@ -975,5 +1160,6 @@ if __name__ == "__main__":
         fast_mode=fast_mode,
         language=language,
         video_provider=video_provider,
-        veo_direction_by_director=veo_direction_by_director
+        veo_direction_by_director=veo_direction_by_director,
+        target_duration_sec=target_duration_sec,
     )

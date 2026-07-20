@@ -139,6 +139,7 @@ def create_job():
     if video_provider is None and data.get("enable_veo"):
         video_provider = "seedance"
     veo_direction_by_director = bool(video_provider) and data.get("veo_direction", True)
+    target_duration_sec = int(data.get("target_duration_sec", 240))
 
     job_id = uuid.uuid4().hex[:12]
 
@@ -149,6 +150,7 @@ def create_job():
         "video_provider": video_provider,
         "veo_direction_by_director": veo_direction_by_director,
         "use_internet_image_search": use_internet_image_search,
+        "target_duration_sec": target_duration_sec,
     }
 
     # Write job to database
@@ -184,7 +186,8 @@ def create_job():
         target=_run_pipeline_job,
         args=(job_id, context, do_research, do_web_search,
               use_internet_image_search, fast_mode, language,
-              image_provider, video_provider, veo_direction_by_director),
+              image_provider, video_provider, veo_direction_by_director,
+              target_duration_sec),
         daemon=True,
     )
     thread.start()
@@ -553,7 +556,8 @@ def serve_thumbnail(image_id):
 
 def _run_pipeline_job(job_id, context, do_research, do_web_search,
                       use_internet_image_search, fast_mode, language,
-                      image_provider, video_provider, veo_direction_by_director):
+                      image_provider, video_provider, veo_direction_by_director,
+                      target_duration_sec=240):
     """Execute the pipeline in a background thread, updating job progress."""
     runtime = None
     try:
@@ -582,6 +586,7 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
             image_provider=image_provider,
             video_provider=video_provider,
             veo_direction_by_director=veo_direction_by_director,
+            target_duration_sec=target_duration_sec,
             run_id=run_id,
             job_id=job_id,
             skip_review=False,

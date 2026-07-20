@@ -124,7 +124,7 @@
               <span class="form-hint">描述你想要的视频内容，越详细效果越好</span>
             </div>
 
-            <!-- 语言 + 研究模式 -->
+            <!-- 语言 + 研究模式 + 时长 -->
             <div class="form-row">
               <div class="form-group">
                 <label for="languageInput">旁白语言</label>
@@ -138,6 +138,15 @@
                   <option value="deep">深度研究</option>
                   <option value="none">不使用（仅用提示词）</option>
                 </select>
+              </div>
+              <div class="form-group">
+                <label for="durationSelect">目标时长</label>
+                <select id="durationSelect">
+                  <option value="180">3 分钟（精简版）</option>
+                  <option value="240" selected>4 分钟（标准版）</option>
+                  <option value="300">5 分钟（详细版）</option>
+                </select>
+                <span class="form-hint">视频越短观众留存率越高，推荐 3-4 分钟</span>
               </div>
             </div>
 

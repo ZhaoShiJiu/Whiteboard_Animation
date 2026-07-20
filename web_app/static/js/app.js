@@ -188,6 +188,7 @@ document.getElementById('newProjectForm').addEventListener('submit', async (e) =
     image_provider: document.getElementById('imageProviderSelect').value || 'qwen',
     video_provider: videoProviderSelect.value || null,
     veo_direction: document.getElementById('veoDirToggle').checked,
+    target_duration_sec: parseInt(document.getElementById('durationSelect').value) || 240,
   };
 
   const btn = document.getElementById('submitBtn');
@@ -620,6 +621,12 @@ function _showDirectorReview(job) {
   const scenes = plan.scenes || [];
 
   // Global plan summary
+  const isCJK = ['chinese','mandarin','cantonese','japanese','korean','zh','ja','ko'].includes(
+    (job.language || '').toLowerCase()
+  );
+  const totalUnits = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0);
+  const estMinutes = isCJK ? (totalUnits / 200) : (totalUnits / 140);
+
   document.getElementById('directorGlobalPlan').innerHTML =
     `<div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;background:var(--color-bg);border-radius:var(--radius-sm);">
       <span class="badge">标题: ${_escapeHtml(global.title || '—')}</span>
@@ -628,8 +635,9 @@ function _showDirectorReview(job) {
       <span class="badge">视觉风格: ${_escapeHtml(global.visual_style || '—')}</span>
       <span class="badge">节奏: ${_escapeHtml(global.pacing || '—')}</span>
       <span class="badge">共 ${scenes.length} 个场景</span>
+      <span class="badge" style="background:var(--color-accent);color:#fff;">⏱ 预计 ${estMinutes.toFixed(1)} 分钟 (${totalUnits} 字)</span>
     </div>
-    ${global.narrative_arc ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--color-text-secondary);">叙事弧: ${_escapeHtml(global.narrative_arc)}</div>` : ''}`;
+    ${global.narrative_arc ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--color-text-secondary);">📖 叙事弧: ${_escapeHtml(global.narrative_arc)}</div>` : ''}`;
 
   // Scenes list
   document.getElementById('directorScenesList').innerHTML = scenes.map((s, i) => `
@@ -637,7 +645,8 @@ function _showDirectorReview(job) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
         <strong style="color:var(--color-accent);">🎯 场景 ${s.scene_number || i + 1}</strong>
         <span style="color:var(--color-text-muted);font-size:0.8rem;">${_escapeHtml(s.summary || '')}</span>
-        <span style="color:var(--color-text-muted);font-size:0.75rem;margin-left:auto;">情绪: ${_escapeHtml(s.emotional_beat || '—')}</span>
+        <span style="color:var(--color-text-muted);font-size:0.75rem;margin-left:auto;">策略: ${_escapeHtml(s.visual_strategy || '—')}</span>
+        <span style="color:var(--color-text-muted);font-size:0.75rem;">情绪: ${_escapeHtml(s.emotional_beat || '—')}</span>
       </div>
       <div style="margin-bottom:8px;">
         <div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:2px;">旁白脚本:</div>
@@ -645,8 +654,8 @@ function _showDirectorReview(job) {
       </div>
       <div style="font-size:0.75rem;color:var(--color-text-muted);">
         画面描述: ${_escapeHtml((s.description || '').substring(0, 150))}${(s.description || '').length > 150 ? '…' : ''}
-        ${s.text_overlay ? `<br>文字覆盖: <strong>${_escapeHtml(s.text_overlay)}</strong>` : ''}
-        ${s.search_query ? `<br>参考搜索: <strong>${_escapeHtml(s.search_query)}</strong>` : ''}
+        ${s.text_overlay ? `<br>🏷 文字覆盖: <strong style="color:var(--color-accent);">${_escapeHtml(s.text_overlay)}</strong>` : '<br>⚠️ 缺少 text_overlay'}
+        ${s.search_query ? `<br>🔍 参考搜索: <strong>${_escapeHtml(s.search_query)}</strong>` : ''}
       </div>
     </div>
   `).join('');

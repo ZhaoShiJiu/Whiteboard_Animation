@@ -53,9 +53,10 @@ def refine_narration_tool_fn(
             duration_guidance = f"""
     PACING CONSTRAINT:
     - The animation is {video_duration:.1f} seconds long.
-    - The Director's narration is intentionally rich and detailed ({original_words} words).
-    - Do NOT shorten, compress, or tighten the narration. Preserve it in full.
-    - The video will hold on the last frame to accommodate the longer audio. That is expected and fine.
+    - The Director's narration is quite long ({original_words} words, target ~{target_words}).
+    - TIGHTEN the language significantly: cut filler, merge redundant sentences,
+      remove throat-clearing phrases. Keep all key facts but reduce the word count.
+    - Prioritise impact — punchier is better.
     """
         else:
             duration_guidance = f"""
@@ -78,7 +79,7 @@ def refine_narration_tool_fn(
     prompt = f"""
     You are a Narration Enhancer working under the direction of a {persona}.
 
-    DIRECTOR'S ORIGINAL NARRATION (THIS IS YOUR PRIMARY INPUT — PRESERVE IT):
+    DIRECTOR'S ORIGINAL NARRATION (THIS IS YOUR PRIMARY INPUT):
     "{original_narration}"
 
     Tone: {tone}
@@ -87,33 +88,33 @@ def refine_narration_tool_fn(
 
     An image of the whiteboard animation frame has been generated for visual context.
 
-    YOUR TASK: Enhance the Director's narration for spoken delivery.
+    YOUR TASK: Polish the Director's narration for compelling spoken delivery.
 
-    ABSOLUTE RULES — VIOLATION IS FAILURE:
-    1. PRESERVE ALL INFORMATION: Every fact, name, number, and detail from the Director's
-       narration MUST appear in your output. You are ENHANCING, not replacing.
-    2. DO NOT DESCRIBE THE IMAGE: You must NEVER say things like "we see a drawing of..."
-       or "the whiteboard shows..." or "lines and shapes depict...". The narration is for
-       the AUDIENCE watching the video, not someone looking at a whiteboard.
-    3. TELL THE STORY: The narration should sound like a compelling story being told to
-       an audience. Use the {tone} tone throughout.
-    4. KEEP THE VOICE: Maintain the {persona} voice consistently.
-    5. FLOW NATURALLY: The narration should sound natural when spoken aloud. Use MiniMax's
-       native pause format <#x#> for timing control (e.g., <#0.5#> for a half-second pause,
-       <#1.0#> for a full second). Do NOT use [pause], [softly], or any other bracketed
-       English cue — the TTS engine will read those words aloud, ruining the narration.
-    6. OUTPUT LANGUAGE: The refined narration MUST be written in {language}.
+    CORE RULES:
+    1. KEEP THE ESSENCE: Preserve key facts, names, numbers, and the core message.
+       But CUT filler phrases, redundant explanations, and throat-clearing.
+    2. TIGHTEN FOR IMPACT: Shorter, punchier sentences are better than rambling ones.
+       If a sentence doesn't earn its place, cut it. Surgery, not sanding.
+    3. DO NOT DESCRIBE THE IMAGE: Never say "we see a drawing of..." or
+       "the whiteboard shows..." or "lines and shapes depict...".
+    4. TELL THE STORY: Sound like a compelling story, not a textbook reading.
+       Use the {tone} tone throughout.
+    5. KEEP THE VOICE: Maintain the {persona} voice consistently.
+    6. FLOW NATURALLY: Use MiniMax's native pause format <#x#> for timing control
+       (e.g., <#0.5#> for a half-second pause, <#1.0#> for a full second).
+       Do NOT use [pause], [softly], or any other bracketed English cue.
+    7. OUTPUT LANGUAGE: The narration MUST be in {language}.
 
     WHAT YOU MAY DO:
-    - Improve word choice for more vivid, engaging storytelling
+    - Improve word choice for vivid, engaging storytelling
     - Adjust sentence rhythm for better spoken delivery
     - Add transitional phrases for smoother flow
-    - Expand briefly if the narration needs to be longer for the video duration
-    - Add emotional coloring that matches the scene's mood
+    - Add emotional coloring matching the scene's mood
+    - CUT or MERGE sentences that are redundant or drag the pacing
+    - Tighten verbose passages while keeping their meaning
 
     WHAT YOU MUST NEVER DO:
-    - Remove or replace factual content from the Director's narration
-    - Add information that wasn't in the original narration
+    - Add NEW facts or information not in the original narration
     - Describe what's drawn in the whiteboard image
     - Add meta-commentary about the video or animation
     - Change the core message or meaning

@@ -33,17 +33,17 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None, fee
         )
 
     prompt = (
-        f"You are an expert research analyst. Your task is to produce a comprehensive, "
-        f"detailed, and well-structured research report on the following topic.\n\n"
+        f"You are an expert research analyst. Your task is to produce a concise, "
+        f"focused, and well-structured research report on the following topic.\n\n"
         f"TOPIC: {context}\n\n"
         f"INSTRUCTIONS:\n"
-        f"1. Research thoroughly as if you had access to all human knowledge.\n"
-        f"2. Include key dates, milestones, important contextual facts, and nuanced details.\n"
-        f"3. Organise the report with clear headings and sections.\n"
-        f"4. This will be used as source material for a documentary/whiteboard animation script, "
-        f"so make it rich with narrative-worthy details.\n"
-        f"5. Write in a professional, authoritative tone.\n"
-        f"6. Aim for at least 1000 words of substantive content.\n"
+        f"1. Identify the 5-7 most compelling, story-worthy facts, events, or insights.\n"
+        f"2. Prioritise NARRATIVE POTENTIAL over comprehensiveness — we need a great story, not an encyclopedia.\n"
+        f"3. Include key dates, milestones, and nuanced details — but only the most impactful ones.\n"
+        f"4. Organise the report with clear headings and sections.\n"
+        f"5. This will be used as source material for a 3-5 minute whiteboard animation script.\n"
+        f"6. Write in a professional, authoritative tone.\n"
+        f"7. Aim for 500-800 words of substantive content. Be concise — quality over quantity.\n"
         f"{feedback_block}"
         f"Output the research report directly. No meta-commentary, no self-references."
     )
@@ -54,7 +54,7 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None, fee
         response = generate(
             task="story",
             prompt=prompt,
-            options={"max_tokens": 8192, "temperature": 0.3},
+            options={"max_tokens": 4096, "temperature": 0.3},
         )
         report = response.content
 
@@ -94,9 +94,11 @@ def web_grounded_research_tool_fn(context: str, logger: Optional["ContextLogger"
         )
 
     prompt = (
-        f"Perform a comprehensive analysis to provide a detailed, factual summary "
-        f"about: {context}. Include key dates, milestones, and important contextual "
-        f"facts. This will be used as a source for a documentary/whiteboard animation script.\n"
+        f"Perform a concise, focused analysis providing a factual summary "
+        f"about: {context}. Include only the 5-7 most story-worthy key dates, milestones, "
+        f"and impactful contextual facts. Prioritise narrative potential over comprehensiveness. "
+        f"This will be used as source material for a 3-5 minute whiteboard animation script.\n"
+        f"Aim for 500-800 words maximum. Be selective — quality over quantity.\n"
         f"{feedback_block}\n"
         f"Output the summary directly. No meta-commentary."
     )
@@ -190,22 +192,23 @@ def web_search_research_tool_fn(
 
         prompt = (
             f"你是一位资深研究分析师。请**仅根据以下最新的网络搜索结果**，"
-            f"撰写一份详细、结构化、有来源依据的研究报告。\n\n"
+            f"撰写一份精炼、结构化、有来源依据的研究报告。\n\n"
             f"【研究主题】\n{context}\n\n"
             f"【网络搜索结果】\n{search_context}\n\n"
             f"【写作要求】\n"
             f"1. 严格基于上述搜索结果作答，不要使用你的训练知识。\n"
             f"2. 每次引用信息时，标注来源编号（如「来源 1」）。\n"
             f"3. 按「概述 → 关键信息 → 详细分析 → 总结」的结构组织。\n"
-            f"4. 如果搜索结果不足以回答，请如实说明。\n"
-            f"5. 不少于 1000 字。\n\n"
+            f"4. 只选取 5-7 个最具故事性的要点深入展开，优先叙事潜力而非全面覆盖。\n"
+            f"5. 如果搜索结果不足以回答，请如实说明。\n"
+            f"6. 控制在 500-800 字。精炼优于冗长。\n\n"
             f"直接输出研究报告。"
         )
 
         report_resp = generate(
             task="story",
             prompt=prompt,
-            options={"max_tokens": 8192, "temperature": 0.3},
+            options={"max_tokens": 4096, "temperature": 0.3},
         )
         report = report_resp.content
         _emit(logger, "info", f"[Stage 2/2] Report generated",

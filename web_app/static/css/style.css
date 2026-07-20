@@ -709,6 +709,52 @@ tr:hover td { background: var(--color-bg); }
   margin-left: 8px;
 }
 
+/* ── Review Panels ─────────────────────────────────────────────────────── */
+.review-content {
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  border: 1px solid var(--color-border-light);
+}
+
+.scene-review-card {
+  transition: box-shadow 0.15s ease;
+}
+
+.scene-review-card:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.review-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.badge--research_review,
+.badge--director_review {
+  background: #fffbeb;
+  color: var(--color-amber);
+}
+
+.badge--cancelled {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.badge--generating,
+.badge--merging,
+.badge--researching,
+.badge--directing {
+  background: #eff6ff;
+  color: var(--color-blue);
+}
+
 /* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }

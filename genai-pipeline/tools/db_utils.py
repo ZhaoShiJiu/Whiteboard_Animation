@@ -148,13 +148,25 @@ def update_job(job_id: str, **kwargs: Any) -> None:
 
 
 def get_job(job_id: str) -> Optional[dict]:
-    """Return a job as a dict, or None."""
-    from ai_gateway.db.models import Job
+    """Return a job as a dict, augmented with linked Run review data, or None."""
+    from ai_gateway.db.models import Job, Run
 
     try:
         with _get_session() as session:
             job = session.get(Job, job_id)
-            return job.to_dict() if job else None
+            if job is None:
+                return None
+            result = job.to_dict()
+
+            # Attach review data from linked run (if any)
+            if job.run_id:
+                run = session.get(Run, job.run_id)
+                if run:
+                    result["research_report"] = run.research_report
+                    result["video_plan"] = run.video_plan_json
+                    result["output_dir"] = run.output_dir
+                    result["final_video"] = run.final_video
+            return result
     except Exception as exc:
         _logger.warning("get_job(%s) failed: %s", job_id, exc)
         return None

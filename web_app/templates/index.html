@@ -212,6 +212,52 @@
             </div>
             <p id="jobMessage" class="job-message">等待中…</p>
             <div id="jobResult" style="margin-top: 16px;"></div>
+            <button class="btn btn-outline" id="jobCancelBtn" style="margin-top:12px;color:var(--color-red);border-color:var(--color-red);display:none;">🚫 取消任务</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 研究报告评审面板 -->
+      <div id="researchReviewPanel" style="display:none; margin-top: 24px;">
+        <div class="card">
+          <div class="card-header">
+            <h2>📋 研究报告评审</h2>
+            <span class="badge badge--running">待评审</span>
+          </div>
+          <div class="card-body">
+            <div id="researchReviewContent" class="review-content"></div>
+            <div class="form-group" style="margin-top: 16px;">
+              <label for="researchFeedback">修改意见（可选，重新生成时填写）</label>
+              <textarea id="researchFeedback" rows="3" placeholder="例如：请补充更多关于XXX的历史背景…"></textarea>
+            </div>
+            <div class="review-actions" style="display:flex; gap: 12px; margin-top: 16px;">
+              <button class="btn btn-outline" id="researchCancelBtn" style="color:var(--color-red);border-color:var(--color-red);">🚫 取消任务</button>
+              <button class="btn btn-outline" id="researchRegenerateBtn" style="margin-left:auto;">🔄 重新生成</button>
+              <button class="btn btn-primary" id="researchApproveBtn">✅ 批准，继续</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 导演方案评审面板 -->
+      <div id="directorReviewPanel" style="display:none; margin-top: 24px;">
+        <div class="card">
+          <div class="card-header">
+            <h2>🎬 导演方案评审</h2>
+            <span class="badge badge--running">待评审</span>
+          </div>
+          <div class="card-body">
+            <div id="directorGlobalPlan" style="margin-bottom: 16px;"></div>
+            <div id="directorScenesList"></div>
+            <div class="form-group" style="margin-top: 16px;">
+              <label for="directorFeedback">修改意见（可选，重新生成时填写）</label>
+              <textarea id="directorFeedback" rows="3" placeholder="例如：场景3的旁白太短，请扩展到30秒…"></textarea>
+            </div>
+            <div class="review-actions" style="display:flex; gap: 12px; margin-top: 16px;">
+              <button class="btn btn-outline" id="directorCancelBtn" style="color:var(--color-red);border-color:var(--color-red);">🚫 取消任务</button>
+              <button class="btn btn-outline" id="directorRegenerateBtn" style="margin-left:auto;">🔄 重新生成</button>
+              <button class="btn btn-primary" id="directorApproveBtn">✅ 批准，开始制作</button>
+            </div>
           </div>
         </div>
       </div>

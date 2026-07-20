@@ -145,6 +145,7 @@ class Job(Base):
             "message": self.message,
             "context": self.context,
             "language": self.language,
+            "run_id": self.run_id,
             "video_provider": (self.settings_json or {}).get("video_provider"),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "result": None,

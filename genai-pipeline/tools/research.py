@@ -8,7 +8,7 @@ except ImportError:
     ContextLogger = None  # type: ignore
 
 
-def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> str:
+def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None, feedback: str = "") -> str:
     """
     Performs end-to-end research on the given context using the AI Gateway LLM.
 
@@ -18,10 +18,19 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> 
     Args:
         context: The topic to research.
         logger: Optional ContextLogger for structured logging.
+        feedback: Optional user feedback for regeneration.
     Returns:
         A detailed research report string.
     """
     _emit(logger, "info", f"Starting Deep Research", extra={"context": context[:200]})
+
+    feedback_block = ""
+    if feedback:
+        feedback_block = (
+            f"\n\nUSER FEEDBACK FOR REVISION:\n"
+            f"{feedback}\n"
+            f"Please regenerate the research report addressing the feedback above.\n"
+        )
 
     prompt = (
         f"You are an expert research analyst. Your task is to produce a comprehensive, "
@@ -34,7 +43,8 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> 
         f"4. This will be used as source material for a documentary/whiteboard animation script, "
         f"so make it rich with narrative-worthy details.\n"
         f"5. Write in a professional, authoritative tone.\n"
-        f"6. Aim for at least 1000 words of substantive content.\n\n"
+        f"6. Aim for at least 1000 words of substantive content.\n"
+        f"{feedback_block}"
         f"Output the research report directly. No meta-commentary, no self-references."
     )
 
@@ -58,7 +68,7 @@ def research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> 
         return f"An error occurred during research: {str(e)}"
 
 
-def web_grounded_research_tool_fn(context: str, logger: Optional["ContextLogger"] = None) -> str:
+def web_grounded_research_tool_fn(context: str, logger: Optional["ContextLogger"] = None, feedback: str = "") -> str:
     """
     Performs fast research using the AI Gateway LLM.
 
@@ -69,15 +79,25 @@ def web_grounded_research_tool_fn(context: str, logger: Optional["ContextLogger"
     Args:
         context: The topic to research.
         logger: Optional ContextLogger for structured logging.
+        feedback: Optional user feedback for regeneration.
     Returns:
         A concise, factual summary.
     """
     _emit(logger, "info", f"Starting Web-Grounded Research", extra={"context": context[:200]})
 
+    feedback_block = ""
+    if feedback:
+        feedback_block = (
+            f"\n\nUSER FEEDBACK FOR REVISION:\n"
+            f"{feedback}\n"
+            f"Please regenerate the research summary addressing the feedback above.\n"
+        )
+
     prompt = (
         f"Perform a comprehensive analysis to provide a detailed, factual summary "
         f"about: {context}. Include key dates, milestones, and important contextual "
-        f"facts. This will be used as a source for a documentary/whiteboard animation script.\n\n"
+        f"facts. This will be used as a source for a documentary/whiteboard animation script.\n"
+        f"{feedback_block}\n"
         f"Output the summary directly. No meta-commentary."
     )
 

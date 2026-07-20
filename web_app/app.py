@@ -23,6 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 sys.path.insert(0, str(PROJECT_DIR / "genai-pipeline"))
 
+# In-memory registry of active pipeline runtimes (keyed by job_id)
+_active_runtimes: dict = {}
+
 # ── Application logging setup ────────────────────────────────────────────────
 _logs_dir = BASE_DIR / "logs"
 _logs_dir.mkdir(exist_ok=True)
@@ -204,6 +207,66 @@ def get_job(job_id):
     if not job:
         return jsonify({"error": "Job not found."}), 404
     return jsonify(job)
+
+
+@app.route("/api/jobs/<job_id>/approve", methods=["POST"])
+def approve_job(job_id):
+    """
+    Approve (or request regenerate of) the current pipeline stage.
+
+    The pipeline thread is blocked on a PipelineRuntime.pause_event.
+    This endpoint signals that event so the pipeline resumes.
+
+    Request body (all fields optional):
+        action: "approve" (default) | "regenerate"
+        feedback: user feedback text (used when regenerating)
+        video_plan: edited video plan JSON (used when director review is approved)
+    """
+    runtime = _active_runtimes.get(job_id)
+    if not runtime:
+        return jsonify({"error": "Job not found or not awaiting review."}), 404
+
+    data = request.get_json() or {}
+    action = data.get("action", "approve")
+    feedback = data.get("feedback", "").strip()
+
+    if action == "regenerate":
+        runtime.regenerate = True
+        runtime.feedback = feedback
+        _web_logger.info("Job %s: Regenerate requested (feedback=%s)", job_id, feedback[:100])
+    else:
+        runtime.regenerate = False
+        runtime.feedback = ""
+
+    # Accept an edited video_plan from the frontend
+    video_plan = data.get("video_plan")
+    if video_plan:
+        runtime.edited_video_plan = video_plan
+        _web_logger.info("Job %s: Edited video_plan received (%d scenes)",
+                         job_id, len(video_plan.get("scenes", [])))
+        # Persist immediately so the DB is up-to-date
+        from tools.db_utils import update_run
+        update_run(runtime.run_id, video_plan_json=video_plan,
+                   scene_count=len(video_plan.get("scenes", [])))
+
+    runtime.pause_event.set()
+    _web_logger.info("Job %s: Review approved, pipeline resuming (action=%s)", job_id, action)
+    return jsonify({"status": "ok", "action": action})
+
+
+@app.route("/api/jobs/<job_id>/cancel", methods=["POST"])
+def cancel_job(job_id):
+    """Cancel a running or reviewing job."""
+    runtime = _active_runtimes.get(job_id)
+    if runtime:
+        runtime.abort_event.set()
+        _web_logger.info("Job %s: Cancelled by user", job_id)
+        return jsonify({"status": "ok", "message": "Job cancelled."})
+    else:
+        # Job might not have a runtime yet — update DB directly
+        from tools.db_utils import update_job as _uj
+        _uj(job_id, status="cancelled", progress=0, message="已取消")
+        return jsonify({"status": "ok", "message": "Job marked as cancelled."})
 
 
 @app.route("/api/outputs")
@@ -492,14 +555,22 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
                       use_internet_image_search, fast_mode, language,
                       image_provider, video_provider, veo_direction_by_director):
     """Execute the pipeline in a background thread, updating job progress."""
+    runtime = None
     try:
         _update_job(job_id, "running", 5, "Starting pipeline…")
-        _web_logger.info("Job %s: Starting pipeline execution", job_id)
+        _web_logger.info("Job %s: Starting staged pipeline execution", job_id)
 
         # Deferred import so the web app can start even if some deps are missing
-        from pipeline import run_pipeline
+        from pipeline import run_pipeline, PipelineRuntime
 
         _update_job(job_id, "running", 10, "Research & planning…")
+
+        # Generate run_id early so we can link it
+        run_id = f"run_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+        # Create the runtime with synchronisation primitives
+        runtime = PipelineRuntime(run_id=run_id, job_id=job_id)
+        _active_runtimes[job_id] = runtime
 
         result = run_pipeline(
             user_context=context,
@@ -511,6 +582,10 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
             image_provider=image_provider,
             video_provider=video_provider,
             veo_direction_by_director=veo_direction_by_director,
+            run_id=run_id,
+            job_id=job_id,
+            skip_review=False,
+            runtime=runtime,
         )
 
         if result and os.path.exists(result):
@@ -523,13 +598,27 @@ def _run_pipeline_job(job_id, context, do_research, do_web_search,
                         result=result, display_path=display_result)
             _web_logger.info("Job %s: Completed successfully — %s", job_id, result)
         else:
-            _update_job(job_id, "failed", 100, "Pipeline finished but no video was produced.",
-                        error="No output video generated.")
-            _web_logger.warning("Job %s: Finished but no video produced", job_id)
+            # Check if it was cancelled (not a true failure)
+            current = _get_job_dict(job_id)
+            if current and current.get("status") == "cancelled":
+                _web_logger.info("Job %s: Was cancelled by user", job_id)
+            else:
+                _update_job(job_id, "failed", 100, "Pipeline finished but no video was produced.",
+                            error="No output video generated.")
+                _web_logger.warning("Job %s: Finished but no video produced", job_id)
 
     except Exception as exc:
         _update_job(job_id, "failed", 0, f"Error: {exc}", error=str(exc))
         _web_logger.error("Job %s: Failed — %s\n%s", job_id, exc, traceback.format_exc())
+    finally:
+        if runtime:
+            _active_runtimes.pop(job_id, None)
+
+
+def _get_job_dict(job_id: str):
+    """Return the raw job dict from the database (used internally)."""
+    from tools.db_utils import get_job as _gj
+    return _gj(job_id)
 
 
 def _update_job(job_id, status, progress, message, result=None, error=None, display_path=None):

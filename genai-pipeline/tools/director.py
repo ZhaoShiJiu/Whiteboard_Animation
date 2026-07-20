@@ -56,6 +56,7 @@ def director_tool_fn(
     enable_veo: bool = False,
     veo_direction_by_director: bool = False,
     logger: Optional["ContextLogger"] = None,
+    feedback: str = "",
 ) -> Dict[str, Any]:
     """
     Acts as the Video Director & Writer — plans the entire video journey.
@@ -97,6 +98,16 @@ def director_tool_fn(
         )
         veo_schema_field = '\n          "veo_prompt": "...",'
 
+    feedback_block = ""
+    if feedback:
+        feedback_block = f"""
+
+    USER FEEDBACK FOR REVISION (CRITICAL — address every point):
+    ---
+    {feedback}
+    ---
+    """
+
     prompt = f"""
     You are an award-winning Video Director, Writer, and Storyteller.
     You are planning a whiteboard animation video. Your job is to craft the ENTIRE video —
@@ -104,7 +115,7 @@ def director_tool_fn(
 
     User's Topic / Instructions:
     "{user_instructions}"
-    {research_block}
+    {research_block}{feedback_block}
 
     YOUR TASK — Plan the complete video:
 

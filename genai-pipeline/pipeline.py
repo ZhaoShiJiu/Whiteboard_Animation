@@ -5,6 +5,7 @@ import concurrent.futures
 import subprocess
 import sys
 import uuid
+import threading
 import traceback
 from typing import Optional
 
@@ -59,6 +60,37 @@ def _is_valid_path(path: str) -> bool:
         return False
     return os.path.exists(path)
 
+
+class PipelineRuntime:
+    """Holds synchronisation primitives for staged pipeline execution with
+    frontend review checkpoints.  The background pipeline thread blocks on
+    ``pause_event``; the web frontend signals it via the /approve endpoint."""
+
+    def __init__(self, run_id: str, job_id: Optional[str] = None):
+        self.run_id = run_id
+        self.job_id = job_id
+        self.pause_event = threading.Event()
+        self.abort_event = threading.Event()
+        self.regenerate = False
+        self.feedback = ""
+        self.edited_video_plan: Optional[dict] = None
+
+
+def _wait_for_approval(runtime: PipelineRuntime) -> bool:
+    """Block the pipeline thread until the frontend approves or cancels.
+
+    Returns:
+        ``True`` if the frontend approved (continue pipeline).
+        ``False`` if the frontend cancelled (abort pipeline).
+    """
+    while True:
+        if runtime.abort_event.is_set():
+            return False
+        if runtime.pause_event.wait(timeout=1.0):
+            runtime.pause_event.clear()
+            return True
+
+
 # --- Main Pipeline ---
 
 def run_pipeline(
@@ -73,6 +105,9 @@ def run_pipeline(
     veo_direction_by_director: bool = False,
     logger: Optional[ContextLogger] = None,
     run_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    skip_review: bool = True,
+    runtime: Optional[PipelineRuntime] = None,
 ):
     """
     Run the full whiteboard animation ai pipeline.
@@ -89,6 +124,12 @@ def run_pipeline(
         veo_direction_by_director: Let Director generate video prompts.
         logger: Optional pre-configured ContextLogger. If None, one is created.
         run_id: Optional run identifier. Auto-generated if None.
+        job_id: Optional job identifier (links the run to a web-frontend job).
+        skip_review: When True (default / CLI), the pipeline runs straight through.
+            When False, the pipeline pauses at research_review and director_review
+            checkpoints and waits for the frontend to call /approve.
+        runtime: PipelineRuntime instance carrying pause/abort events.  Required
+            when *skip_review* is False; ignored otherwise.
 
     Returns:
         Path to the final video, or None if all scenes failed.
@@ -119,6 +160,7 @@ def run_pipeline(
     from tools import db_utils as _db
     _db.create_run(
         run_id=run_id,
+        job_id=job_id,
         context=user_context,
         language=language,
         settings={
@@ -132,6 +174,9 @@ def run_pipeline(
         },
         output_dir=output_dir,
     )
+    # Link the job record to this run so the frontend can find review data
+    if job_id:
+        _db.update_job(job_id, run_id=run_id)
 
     t_pipeline_start = time.perf_counter()
 
@@ -167,6 +212,7 @@ def run_pipeline(
             run_id=run_id,
             logger=logger,
             t_pipeline_start=t_pipeline_start,
+            runtime=runtime,
         )
     except Exception:
         logger.exception("Pipeline crashed with unhandled exception")
@@ -196,78 +242,172 @@ def _run_pipeline_impl(
     run_id: str,
     logger: ContextLogger,
     t_pipeline_start: float,
+    runtime: Optional[PipelineRuntime] = None,
 ):
     # 1. Research (Optional)
     research_report = None
     research_logger = logger.bind(step_tag="research")
+    research_was_run = do_research or do_web_search
 
-    if do_research:
-        research_logger.info("Step 1: Performing Deep Research...")
-        try:
-            research_report = research_tool_fn(user_context, logger=research_logger)
-            research_logger.info(
-                "Research completed",
-                extra={"report_length": len(research_report) if research_report else 0},
-            )
-        except Exception as e:
-            research_logger.warning(
-                f"Deep Research failed: {e}. Continuing without research.",
-                extra={"error": str(e)},
-            )
-            research_report = None
-    elif do_web_search:
-        research_logger.info("Step 1: Performing Web-Grounded Research (Fast)...")
-        try:
-            research_report = web_grounded_research_tool_fn(user_context, logger=research_logger)
-            research_logger.info(
-                "Web-Grounded Research completed",
-                extra={"report_length": len(research_report) if research_report else 0},
-            )
-        except Exception as e:
-            research_logger.warning(
-                f"Web-Grounded Research failed: {e}. Continuing without research.",
-                extra={"error": str(e)},
-            )
-            research_report = None
-    else:
-        research_logger.info("Step 1: Skipping Research — using provided context directly.")
+    while True:  # loop allows regenerate if frontend requests it
+        if do_research:
+            research_logger.info("Step 1: Performing Deep Research...")
+            try:
+                research_report = research_tool_fn(user_context, logger=research_logger,
+                                                   feedback=runtime.feedback if runtime else "")
+                research_logger.info(
+                    "Research completed",
+                    extra={"report_length": len(research_report) if research_report else 0},
+                )
+            except Exception as e:
+                research_logger.warning(
+                    f"Deep Research failed: {e}. Continuing without research.",
+                    extra={"error": str(e)},
+                )
+                research_report = None
+        elif do_web_search:
+            research_logger.info("Step 1: Performing Web-Grounded Research (Fast)...")
+            try:
+                research_report = web_grounded_research_tool_fn(user_context, logger=research_logger,
+                                                                feedback=runtime.feedback if runtime else "")
+                research_logger.info(
+                    "Web-Grounded Research completed",
+                    extra={"report_length": len(research_report) if research_report else 0},
+                )
+            except Exception as e:
+                research_logger.warning(
+                    f"Web-Grounded Research failed: {e}. Continuing without research.",
+                    extra={"error": str(e)},
+                )
+                research_report = None
+        else:
+            research_logger.info("Step 1: Skipping Research — using provided context directly.")
+
+        # Persist research to run record
+        from tools import db_utils as _db_r1
+        _db_r1.update_run(run_id, research_report=research_report)
+
+        # ── Research review checkpoint ──
+        if runtime is None or not research_was_run:
+            break  # CLI mode or no research to review — continue straight through
+
+        from tools import db_utils as _db_j1
+        _db_j1.update_job(
+            runtime.job_id,
+            status="research_review",
+            progress=20,
+            message="等待评审研究报告…",
+        )
+        research_logger.info("Pausing for research review — waiting for frontend approval...")
+
+        if not _wait_for_approval(runtime):
+            _db_j1.update_job(runtime.job_id, status="cancelled", progress=0, message="已取消")
+            research_logger.info("Pipeline cancelled by user during research review.")
+            return None
+
+        if runtime.regenerate:
+            runtime.regenerate = False
+            _db_j1.update_job(runtime.job_id, status="researching", progress=15,
+                              message="重新研究中…")
+            research_logger.info("Regenerating research per user request...")
+            continue  # re-run the research loop
+
+        break  # approved — move on
+
+    # 审批通过后立刻更新状态，消除"状态真空"窗口
+    if runtime is not None and research_was_run:
+        from tools import db_utils as _db_j1b
+        _db_j1b.update_job(runtime.job_id, status="directing", progress=25,
+                           message="导演规划中…")
 
     # Step 2: Director Planning
     director_logger = logger.bind(step_tag="director")
-    director_logger.info("Step 2: Director Planning & Scene Writing...")
-    t_director_start = time.perf_counter()
 
-    video_plan = director_tool_fn(
-        user_context,
-        research_material=research_report,
-        language=language,
-        enable_veo=(video_provider is not None),
-        veo_direction_by_director=veo_direction_by_director,
-        logger=director_logger,
-    )
+    while True:  # loop allows regenerate if frontend requests it
+        director_logger.info("Step 2: Director Planning & Scene Writing...")
+        t_director_start = time.perf_counter()
 
-    global_plan = video_plan.get("global_plan", {})
-    scenes = video_plan.get("scenes", [])
-    director_elapsed = (time.perf_counter() - t_director_start) * 1000
+        video_plan = director_tool_fn(
+            user_context,
+            research_material=research_report,
+            language=language,
+            enable_veo=(video_provider is not None),
+            veo_direction_by_director=veo_direction_by_director,
+            logger=director_logger,
+            feedback=runtime.feedback if runtime else "",
+        )
 
-    director_logger.info(
-        f"Director planned {len(scenes)} scenes",
-        extra={
-            "scene_count": len(scenes),
-            "tone": global_plan.get("tone"),
-            "narrative_arc": global_plan.get("narrative_arc", "N/A"),
-            "elapsed_ms": round(director_elapsed, 1),
-        },
-    )
+        global_plan = video_plan.get("global_plan", {})
+        scenes = video_plan.get("scenes", [])
+        director_elapsed = (time.perf_counter() - t_director_start) * 1000
 
-    # -- Persist director output to DB --
-    from tools import db_utils as _db2
-    _db2.update_run(
-        run_id,
-        video_plan_json=video_plan,
-        scene_count=len(scenes),
-        research_report=research_report,
-    )
+        director_logger.info(
+            f"Director planned {len(scenes)} scenes",
+            extra={
+                "scene_count": len(scenes),
+                "tone": global_plan.get("tone"),
+                "narrative_arc": global_plan.get("narrative_arc", "N/A"),
+                "elapsed_ms": round(director_elapsed, 1),
+            },
+        )
+
+        # -- Persist director output to DB --
+        from tools import db_utils as _db2
+        _db2.update_run(
+            run_id,
+            video_plan_json=video_plan,
+            scene_count=len(scenes),
+            research_report=research_report,
+        )
+
+        # ── Director review checkpoint ──
+        if runtime is None:
+            break  # CLI mode — continue straight through
+
+        from tools import db_utils as _db_j2
+        _db_j2.update_job(
+            runtime.job_id,
+            status="director_review",
+            progress=30,
+            message="等待评审导演方案…",
+        )
+        director_logger.info("Pausing for director review — waiting for frontend approval...")
+
+        if not _wait_for_approval(runtime):
+            _db_j2.update_job(runtime.job_id, status="cancelled", progress=0, message="已取消")
+            director_logger.info("Pipeline cancelled by user during director review.")
+            return None
+
+        if runtime.regenerate:
+            runtime.regenerate = False
+            _db_j2.update_job(runtime.job_id, status="directing", progress=25,
+                              message="重新规划中…")
+            director_logger.info("Regenerating director plan per user request...")
+            continue  # re-run the director loop
+
+        # Check if frontend sent an edited video_plan
+        if runtime.edited_video_plan:
+            video_plan = runtime.edited_video_plan
+            global_plan = video_plan.get("global_plan", {})
+            scenes = video_plan.get("scenes", [])
+            director_logger.info(
+                f"Using frontend-edited video plan ({len(scenes)} scenes)",
+                extra={"scene_count": len(scenes)},
+            )
+            from tools import db_utils as _db2e
+            _db2e.update_run(
+                run_id,
+                video_plan_json=video_plan,
+                scene_count=len(scenes),
+            )
+
+        break  # approved — move on
+
+    # 审批通过后立刻更新状态
+    if runtime is not None:
+        from tools import db_utils as _db_j2b
+        _db_j2b.update_job(runtime.job_id, status="generating", progress=35,
+                           message="生成场景中…")
 
     final_videos = []
     scene_srt_paths = []

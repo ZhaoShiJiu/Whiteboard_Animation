@@ -58,6 +58,14 @@ function toast(message, type = 'info') {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 活跃任务追踪
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _currentJobId = null;
+let _reviewDismissed = false;
+let _pollInterval = null;
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 状态指示器
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -207,9 +215,12 @@ document.getElementById('newProjectForm').addEventListener('submit', async (e) =
 });
 
 function _pollJob(jobId) {
+  _currentJobId = jobId;
   setStatus('busy');
 
-  const interval = setInterval(async () => {
+  if (_pollInterval) clearInterval(_pollInterval);
+
+  _pollInterval = setInterval(async () => {
     try {
       const job = await API.get(`/jobs/${jobId}`);
 
@@ -222,6 +233,24 @@ function _pollJob(jobId) {
       bar.style.width = `${job.progress}%`;
       msg.textContent = job.message;
 
+      // 后端状态已经离开评审阶段 → 清除前端驳回标记
+      if (_reviewDismissed && !['research_review', 'director_review'].includes(job.status)) {
+        _reviewDismissed = false;
+      }
+
+      // Show cancel button for running/researching/directing/generating/merging states
+      const cancelBtn = document.getElementById('jobCancelBtn');
+      if (cancelBtn) {
+        const cancellable = ['running', 'researching', 'directing', 'generating', 'merging'];
+        cancelBtn.style.display = cancellable.includes(job.status) ? 'inline-flex' : 'none';
+        cancelBtn.onclick = () => {
+          if (confirm('确定要取消这个任务吗？')) {
+            _cancelJob(jobId);
+            clearInterval(_pollInterval);
+          }
+        };
+      }
+
       // 根据管道阶段映射进度
       if (job.status === 'running') {
         if (job.message.includes('Research')) bar.style.width = '15%';
@@ -232,12 +261,36 @@ function _pollJob(jobId) {
       badge.textContent = _statusLabel(job.status);
       badge.className = `badge badge--${job.status}`;
 
+      // ── Review checkpoints ──
+      if (job.status === 'research_review') {
+        clearInterval(_pollInterval);
+        _showResearchReview(job);
+        return;
+      }
+
+      if (job.status === 'director_review') {
+        clearInterval(_pollInterval);
+        _showDirectorReview(job);
+        return;
+      }
+
+      if (job.status === 'cancelled') {
+        clearInterval(_pollInterval);
+        setStatus('idle');
+        toast('任务已取消', 'info');
+        document.getElementById('activeJobPanel').style.display = 'none';
+        document.getElementById('researchReviewPanel').style.display = 'none';
+        document.getElementById('directorReviewPanel').style.display = 'none';
+        refreshDashboard();
+        return;
+      }
+
       if (job.status === 'completed') {
-        clearInterval(interval);
+        clearInterval(_pollInterval);
         setStatus('idle');
         bar.style.width = '100%';
         toast('视频生成完成！', 'success');
-        const displayPath = job.display_path || job.result || '—';
+        const displayPath = job.final_video || job.result || '—';
         document.getElementById('jobResult').innerHTML = `
           <div style="padding:12px;background:var(--color-bg);border-radius:var(--radius-sm);">
             <strong>✅ 视频已生成</strong>
@@ -253,7 +306,7 @@ function _pollJob(jobId) {
       }
 
       if (job.status === 'failed') {
-        clearInterval(interval);
+        clearInterval(_pollInterval);
         setStatus('error');
         toast(`任务失败：${job.error || '未知错误'}`, 'error');
         document.getElementById('jobResult').innerHTML = `
@@ -265,7 +318,7 @@ function _pollJob(jobId) {
       }
 
     } catch (err) {
-      clearInterval(interval);
+      clearInterval(_pollInterval);
       console.error('任务轮询错误:', err);
     }
   }, 2000);
@@ -500,6 +553,193 @@ document.getElementById('logRefreshBtn').addEventListener('click', function () {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 评审面板 — 研究报告
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _showResearchReview(job) {
+  // 如果用户刚刚点了审批，后端状态还没更新，不重复弹出面板
+  if (_reviewDismissed) return;
+
+  document.getElementById('activeJobPanel').style.display = 'none';
+  const panel = document.getElementById('researchReviewPanel');
+  panel.style.display = 'block';
+
+  // 每次显示时重置按钮状态
+  document.getElementById('researchApproveBtn').disabled = false;
+  document.getElementById('researchRegenerateBtn').disabled = false;
+  document.getElementById('researchCancelBtn').disabled = false;
+
+  const report = job.research_report || '(空报告)';
+  document.getElementById('researchReviewContent').innerHTML =
+    `<div style="max-height:500px;overflow-y:auto;padding:16px;background:var(--color-bg);border-radius:var(--radius-sm);font-size:0.875rem;line-height:1.7;white-space:pre-wrap;">${_escapeHtml(report)}</div>`;
+
+  document.getElementById('researchFeedback').value = '';
+
+  document.getElementById('researchCancelBtn').onclick = () => {
+    if (confirm('确定要取消这个任务吗？')) {
+      _cancelJob(job.id);
+    }
+  };
+
+  document.getElementById('researchApproveBtn').onclick = () => {
+    document.getElementById('researchApproveBtn').disabled = true;
+    document.getElementById('researchRegenerateBtn').disabled = true;
+    document.getElementById('researchCancelBtn').disabled = true;
+    _approveJob(job.id, 'approve');
+  };
+
+  document.getElementById('researchRegenerateBtn').onclick = () => {
+    const feedback = document.getElementById('researchFeedback').value.trim();
+    document.getElementById('researchApproveBtn').disabled = true;
+    document.getElementById('researchRegenerateBtn').disabled = true;
+    document.getElementById('researchCancelBtn').disabled = true;
+    _approveJob(job.id, 'regenerate', feedback);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 评审面板 — 导演方案
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _showDirectorReview(job) {
+  // 如果用户刚刚点了审批，后端状态还没更新，不重复弹出面板
+  if (_reviewDismissed) return;
+
+  document.getElementById('activeJobPanel').style.display = 'none';
+  document.getElementById('researchReviewPanel').style.display = 'none';
+  const panel = document.getElementById('directorReviewPanel');
+  panel.style.display = 'block';
+
+  // 每次显示时重置按钮状态
+  document.getElementById('directorApproveBtn').disabled = false;
+  document.getElementById('directorRegenerateBtn').disabled = false;
+  document.getElementById('directorCancelBtn').disabled = false;
+
+  const plan = job.video_plan || {};
+  const global = plan.global_plan || {};
+  const scenes = plan.scenes || [];
+
+  // Global plan summary
+  document.getElementById('directorGlobalPlan').innerHTML =
+    `<div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;background:var(--color-bg);border-radius:var(--radius-sm);">
+      <span class="badge">标题: ${_escapeHtml(global.title || '—')}</span>
+      <span class="badge">基调: ${_escapeHtml(global.tone || '—')}</span>
+      <span class="badge">叙事人格: ${_escapeHtml(global.narrative_persona || '—')}</span>
+      <span class="badge">视觉风格: ${_escapeHtml(global.visual_style || '—')}</span>
+      <span class="badge">节奏: ${_escapeHtml(global.pacing || '—')}</span>
+      <span class="badge">共 ${scenes.length} 个场景</span>
+    </div>
+    ${global.narrative_arc ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--color-text-secondary);">叙事弧: ${_escapeHtml(global.narrative_arc)}</div>` : ''}`;
+
+  // Scenes list
+  document.getElementById('directorScenesList').innerHTML = scenes.map((s, i) => `
+    <div class="scene-review-card" style="margin-top:12px;padding:16px;background:var(--color-bg);border-radius:var(--radius-md);border:1px solid var(--color-border-light);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <strong style="color:var(--color-accent);">🎯 场景 ${s.scene_number || i + 1}</strong>
+        <span style="color:var(--color-text-muted);font-size:0.8rem;">${_escapeHtml(s.summary || '')}</span>
+        <span style="color:var(--color-text-muted);font-size:0.75rem;margin-left:auto;">情绪: ${_escapeHtml(s.emotional_beat || '—')}</span>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:2px;">旁白脚本:</div>
+        <div class="scene-narration" data-scene="${i}" style="padding:10px;background:var(--color-white);border-radius:var(--radius-sm);font-size:0.85rem;line-height:1.6;white-space:pre-wrap;border:1px solid var(--color-border-light);">${_escapeHtml(s.narration || '')}</div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--color-text-muted);">
+        画面描述: ${_escapeHtml((s.description || '').substring(0, 150))}${(s.description || '').length > 150 ? '…' : ''}
+        ${s.text_overlay ? `<br>文字覆盖: <strong>${_escapeHtml(s.text_overlay)}</strong>` : ''}
+        ${s.search_query ? `<br>参考搜索: <strong>${_escapeHtml(s.search_query)}</strong>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('directorFeedback').value = '';
+
+  document.getElementById('directorCancelBtn').onclick = () => {
+    if (confirm('确定要取消这个任务吗？')) {
+      _cancelJob(job.id);
+    }
+  };
+
+  document.getElementById('directorApproveBtn').onclick = () => {
+    document.getElementById('directorApproveBtn').disabled = true;
+    document.getElementById('directorRegenerateBtn').disabled = true;
+    document.getElementById('directorCancelBtn').disabled = true;
+    _approveJob(job.id, 'approve');
+  };
+
+  document.getElementById('directorRegenerateBtn').onclick = () => {
+    const feedback = document.getElementById('directorFeedback').value.trim();
+    document.getElementById('directorApproveBtn').disabled = true;
+    document.getElementById('directorRegenerateBtn').disabled = true;
+    document.getElementById('directorCancelBtn').disabled = true;
+    _approveJob(job.id, 'regenerate', feedback);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 评审操作 — 批准 / 重新生成
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function _approveJob(jobId, action, feedback) {
+  const body = { action };
+  if (feedback) body.feedback = feedback;
+
+  // 立即设置标记 + 停掉轮询，防止在等待后端响应期间旧状态触发面板重复弹出
+  _reviewDismissed = true;
+  if (_pollInterval) {
+    clearInterval(_pollInterval);
+    _pollInterval = null;
+  }
+
+  try {
+    await API.post(`/jobs/${jobId}/approve`, body);
+
+    // Hide all review panels
+    document.getElementById('researchReviewPanel').style.display = 'none';
+    document.getElementById('directorReviewPanel').style.display = 'none';
+
+    if (action === 'regenerate') {
+      document.getElementById('activeJobPanel').style.display = 'block';
+      document.getElementById('jobProgressBar').style.width = '10%';
+      document.getElementById('jobMessage').textContent = '重新生成中…';
+      toast('正在重新生成…', 'info');
+      _pollJob(jobId);
+    } else {
+      document.getElementById('activeJobPanel').style.display = 'block';
+      document.getElementById('jobMessage').textContent = '评审通过，继续处理…';
+      toast('评审通过！继续执行', 'success');
+      _pollJob(jobId);
+    }
+  } catch (err) {
+    _reviewDismissed = false;  // 请求失败，恢复标记以供重试
+    toast(`操作失败：${err.message}`, 'error');
+    // Re-enable buttons (null-safe)
+    document.getElementById('researchApproveBtn') && (document.getElementById('researchApproveBtn').disabled = false);
+    document.getElementById('researchRegenerateBtn') && (document.getElementById('researchRegenerateBtn').disabled = false);
+    document.getElementById('researchCancelBtn') && (document.getElementById('researchCancelBtn').disabled = false);
+    document.getElementById('directorApproveBtn') && (document.getElementById('directorApproveBtn').disabled = false);
+    document.getElementById('directorRegenerateBtn') && (document.getElementById('directorRegenerateBtn').disabled = false);
+    document.getElementById('directorCancelBtn') && (document.getElementById('directorCancelBtn').disabled = false);
+  }
+}
+
+async function _cancelJob(jobId) {
+  try {
+    await API.post(`/jobs/${jobId}/cancel`, {});
+    document.getElementById('researchReviewPanel').style.display = 'none';
+    document.getElementById('directorReviewPanel').style.display = 'none';
+    document.getElementById('activeJobPanel').style.display = 'none';
+    if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
+    _reviewDismissed = false;
+    _currentJobId = null;
+    setStatus('idle');
+    toast('任务已取消', 'info');
+    refreshDashboard();
+  } catch (err) {
+    toast(`取消失败：${err.message}`, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -525,8 +765,15 @@ function _statusColor(status) {
   const colors = {
     queued: '#9ca3af',
     running: '#3b82f6',
+    researching: '#3b82f6',
+    directing: '#3b82f6',
+    generating: '#3b82f6',
+    merging: '#3b82f6',
+    research_review: '#f59e0b',
+    director_review: '#f59e0b',
     completed: '#10b981',
     failed: '#ef4444',
+    cancelled: '#9ca3af',
   };
   return colors[status] || '#6b7280';
 }
@@ -535,8 +782,15 @@ function _statusIcon(status) {
   const icons = {
     queued: '⏳',
     running: '⚡',
+    researching: '🔍',
+    directing: '🎬',
+    generating: '🎨',
+    merging: '🔧',
+    research_review: '📋',
+    director_review: '✋',
     completed: '✅',
     failed: '❌',
+    cancelled: '🚫',
   };
   return icons[status] || '•';
 }
@@ -545,8 +799,15 @@ function _statusLabel(status) {
   const labels = {
     queued: '排队中',
     running: '运行中',
+    researching: '研究中',
+    directing: '导演规划中',
+    generating: '生成场景中',
+    merging: '最终合并中',
+    research_review: '待评审研究报告',
+    director_review: '待评审导演方案',
     completed: '已完成',
     failed: '失败',
+    cancelled: '已取消',
   };
   return labels[status] || status;
 }
@@ -555,8 +816,22 @@ function _statusLabel(status) {
 // 初始化
 // ═══════════════════════════════════════════════════════════════════════════
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   refreshDashboard();
+
+  // Recover review-state jobs on page load
+  try {
+    const jobs = await API.get('/jobs');
+    const reviewJob = jobs.find(j => j.status === 'research_review' || j.status === 'director_review');
+    if (reviewJob) {
+      navigateTo('new-project');
+      if (reviewJob.status === 'research_review') {
+        _showResearchReview(reviewJob);
+      } else if (reviewJob.status === 'director_review') {
+        _showDirectorReview(reviewJob);
+      }
+    }
+  } catch (_) { /* non-critical */ }
 
   // 每 30 秒刷新控制台
   setInterval(() => {
